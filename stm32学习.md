@@ -1028,3 +1028,266 @@ stm32CuBeMx可以通过图形化界面来帮我们生成初始化代码
 
 
 这样就完成建立了
+
+
+
+
+
+
+
+
+
+## STM32的时钟系统
+
+
+
+### 时钟系统的介绍
+
+STM32时钟系统可以归纳为三个字: 选, 乘, 除
+
+
+
+F1芯片中, 有四个产生时钟的震荡器
+
+| 时钟源名称          | 频率      | 材料      | 用途       |
+| ------------------- | --------- | --------- | ---------- |
+| 高速外部振荡器(HSE) | 4~16MHz   | 晶体/陶瓷 | SYSCLK/RTC |
+| 低速外部振荡器(LSE) | 32.768KHz | 晶体/陶瓷 | RTC        |
+| 高速内部振荡器(HSI) | 8MHz      | RC        | SYSCLK     |
+| 低速内部振荡器(LSI) | 40KHz     | RC        | RTC/IWDG   |
+
+
+
+![image-20241018171206265](img/image-20241018171206265.png)
+
+重点了解红色标记的部分
+
+
+
+F1时钟树简图
+
+![image-20241018171250416](img/image-20241018171250416.png)
+
+名词的定义:
+
+PLL(Phase-Locked-Loop): 锁相环
+
+RCC: Reset and Clock Control
+
+Osc: Oscillator*/*ˈɒsɪleɪtə(r)*/*振荡器
+
+Periph: Peripheral*/*pəˈrɪfərəl*/*外围的
+
+
+
+
+
+CubeMX上面的设置
+
+![image-20241018171815370](img/image-20241018171815370.png)
+
+
+
+
+
+### 系统时钟配置步骤
+
+![image-20241018183708671](img/image-20241018183708671.png)
+
+![image-20241018191254792](img/image-20241018191254792.png)
+
+
+
+第2点很少需要调整
+
+第5点只在H7芯片才有
+
+
+
+#### 配置HSE_VALUE
+
+![image-20241018190331328](img/image-20241018190331328.png)
+
+F1默认8MHz
+
+
+
+#### 配置HAL_RCC_OscConfig
+
+![image-20241018191303258](img/image-20241018191303258.png)
+
+这一部分对应着
+
+![image-20241018191331243](img/image-20241018191331243.png)
+
+```c
+void sys_stm32_clock_init(uint32_t plln)
+{
+    HAL_StatusTypeDef ret = HAL_ERROR;
+    RCC_OscInitTypeDef rcc_osc_init = {0};
+    RCC_ClkInitTypeDef rcc_clk_init = {0};
+
+    rcc_osc_init.OscillatorType = RCC_OSCILLATORTYPE_HSE;       /* Ñ¡ÔñÒªÅäÖÃHSE */
+    rcc_osc_init.HSEState = RCC_HSE_ON;                         /* ´ò¿ªHSE */
+    rcc_osc_init.HSEPredivValue = RCC_HSE_PREDIV_DIV1;          /* HSEÔ¤·ÖÆµÏµÊý */
+    rcc_osc_init.PLL.PLLState = RCC_PLL_ON;                     /* ´ò¿ªPLL */
+    rcc_osc_init.PLL.PLLSource = RCC_PLLSOURCE_HSE;             /* PLLÊ±ÖÓÔ´Ñ¡ÔñHSE */
+    rcc_osc_init.PLL.PLLMUL = plln;                             /* PLL±¶ÆµÏµÊý */
+    ret = HAL_RCC_OscConfig(&rcc_osc_init);                     /* ³õÊ¼»¯ */
+
+    if (ret != HAL_OK)
+    {
+        while (1);                                              /* Ê±ÖÓ³õÊ¼»¯Ê§°Ü£¬Ö®ºóµÄ³ÌÐò½«¿ÉÄÜÎÞ·¨Õý³£Ö´ÐÐ£¬¿ÉÒÔÔÚÕâÀï¼ÓÈë×Ô¼ºµÄ´¦Àí */
+    }
+
+    /* Ñ¡ÖÐPLL×÷ÎªÏµÍ³Ê±ÖÓÔ´²¢ÇÒÅäÖÃHCLK,PCLK1ºÍPCLK2*/
+    rcc_clk_init.ClockType = (RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2);
+    rcc_clk_init.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;        /* ÉèÖÃÏµÍ³Ê±ÖÓÀ´×ÔPLL */
+    rcc_clk_init.AHBCLKDivider = RCC_SYSCLK_DIV1;               /* AHB·ÖÆµÏµÊýÎª1 */
+    rcc_clk_init.APB1CLKDivider = RCC_HCLK_DIV2;                /* APB1·ÖÆµÏµÊýÎª2 */
+    rcc_clk_init.APB2CLKDivider = RCC_HCLK_DIV1;                /* APB2·ÖÆµÏµÊýÎª1 */
+    ret = HAL_RCC_ClockConfig(&rcc_clk_init, FLASH_LATENCY_2);  /* Í¬Ê±ÉèÖÃFLASHÑÓÊ±ÖÜÆÚÎª2WS£¬Ò²¾ÍÊÇ3¸öCPUÖÜÆÚ¡£ */
+
+    if (ret != HAL_OK)
+    {
+        while (1);                                              /* Ê±ÖÓ³õÊ¼»¯Ê§°Ü£¬Ö®ºóµÄ³ÌÐò½«¿ÉÄÜÎÞ·¨Õý³£Ö´ÐÐ£¬¿ÉÒÔÔÚÕâÀï¼ÓÈë×Ô¼ºµÄ´¦Àí */
+    }
+}
+
+```
+
+1.   振荡器有4个,2个外部2个内部
+2.   给对应的晶振器使能
+3.   选中对应的分屏
+4.   其他值暂时用不上,就不设置,默认为0
+5.   配置PLL, PLL是锁相环, 需要配置里面的使能, PLL的输入(晶振来源), 增加频率的倍数
+6.   最后赋值给HAL_RCC_OscConfig函数
+
+
+
+**这些配置都有特定的寄存器来存放对应的值**
+
+
+
+#### 配置HAL_RCC_ClockConfig函数
+
+![image-20241018192352105](img/image-20241018192352105.png)
+
+对应部分:
+
+![image-20241018192438730](img/image-20241018192438730.png)
+
+```c
+void sys_stm32_clock_init(uint32_t plln)
+{
+    HAL_StatusTypeDef ret = HAL_ERROR;
+    RCC_OscInitTypeDef rcc_osc_init = {0};
+    RCC_ClkInitTypeDef rcc_clk_init = {0};
+
+    rcc_osc_init.OscillatorType = RCC_OSCILLATORTYPE_HSE;       /* Ñ¡ÔñÒªÅäÖÃHSE */
+    rcc_osc_init.HSEState = RCC_HSE_ON;                         /* ´ò¿ªHSE */
+    rcc_osc_init.HSEPredivValue = RCC_HSE_PREDIV_DIV1;          /* HSEÔ¤·ÖÆµÏµÊý */
+    rcc_osc_init.PLL.PLLState = RCC_PLL_ON;                     /* ´ò¿ªPLL */
+    rcc_osc_init.PLL.PLLSource = RCC_PLLSOURCE_HSE;             /* PLLÊ±ÖÓÔ´Ñ¡ÔñHSE */
+    rcc_osc_init.PLL.PLLMUL = plln;                             /* PLL±¶ÆµÏµÊý */
+    ret = HAL_RCC_OscConfig(&rcc_osc_init);                     /* ³õÊ¼»¯ */
+
+    if (ret != HAL_OK)
+    {
+        while (1);                                              /* Ê±ÖÓ³õÊ¼»¯Ê§°Ü£¬Ö®ºóµÄ³ÌÐò½«¿ÉÄÜÎÞ·¨Õý³£Ö´ÐÐ£¬¿ÉÒÔÔÚÕâÀï¼ÓÈë×Ô¼ºµÄ´¦Àí */
+    }
+
+    /* Ñ¡ÖÐPLL×÷ÎªÏµÍ³Ê±ÖÓÔ´²¢ÇÒÅäÖÃHCLK,PCLK1ºÍPCLK2*/
+    rcc_clk_init.ClockType = (RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2);
+    rcc_clk_init.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;        /* ÉèÖÃÏµÍ³Ê±ÖÓÀ´×ÔPLL */
+    rcc_clk_init.AHBCLKDivider = RCC_SYSCLK_DIV1;               /* AHB·ÖÆµÏµÊýÎª1 */
+    rcc_clk_init.APB1CLKDivider = RCC_HCLK_DIV2;                /* APB1·ÖÆµÏµÊýÎª2 */
+    rcc_clk_init.APB2CLKDivider = RCC_HCLK_DIV1;                /* APB2·ÖÆµÏµÊýÎª1 */
+    ret = HAL_RCC_ClockConfig(&rcc_clk_init, FLASH_LATENCY_2);  /* Í¬Ê±ÉèÖÃFLASHÑÓÊ±ÖÜÆÚÎª2WS£¬Ò²¾ÍÊÇ3¸öCPUÖÜÆÚ¡£ */
+
+    if (ret != HAL_OK)
+    {
+        while (1);                                              /* Ê±ÖÓ³õÊ¼»¯Ê§°Ü£¬Ö®ºóµÄ³ÌÐò½«¿ÉÄÜÎÞ·¨Õý³£Ö´ÐÐ£¬¿ÉÒÔÔÚÕâÀï¼ÓÈë×Ô¼ºµÄ´¦Àí */
+    }
+}
+
+```
+
+1.  配置系统时钟源:系统, HCLK(外设总线), PCLK1(APB1), PCLK2(APB2)。这里直接构成了一条频率路线
+2.  配置系统时钟源: 这里的时钟源来自于PLL分频后
+3.  设置分频系数
+
+
+
+第二个参数FLatency表示的是FLASH等待的周期,FLASH的频率只有24MHz, 但是系统频率是72MHz, 所以需要等待2个是周期
+
+
+
+
+
+
+
+## SYSTEM文件夹
+
+
+
+### sys
+
+![image-20241018194253633](img/image-20241018194253633.png)
+
+具体功能作用和配置学到相关功能函数就知道了
+
+
+
+
+
+
+
+### Deley
+
+文件函数结构:
+
+![image-20241018194533028](img/image-20241018194533028.png)
+
+stm32主要是裸机,所以我们这里只学习不适用OS的版本
+
+
+
+了解函数之前,先学习一下SysTick的工作原理
+
+#### SysTick系统滴答定时器
+
+![image-20241018194832628](img/image-20241018194832628.png)
+
+LOAD可以由我们人为设定,这样就可以去控制时间,从而起到计时或者延时之类的效果
+
+
+
+![image-20241018195537115](img/image-20241018195537115.png)
+
+1.   COUNTFLAG: 溢出位判断, 如果溢出表示数到了0, 计数+1, 自动复位
+2.   由于STM32已经固定了时钟源,所以这里就变成了分频
+3.   TICKINT:中断请求时会用到
+4.   ENABLE: 使能位
+
+
+
+![image-20241018195910033](img/image-20241018195910033.png)
+
+1.  RELOAD: 重载位的值, 有24位, 最大16xxxxx几
+2.  CURRENT: 系统计数计数器,同样也是24位的
+
+
+
+#### dealy函数
+
+![image-20241018200555840](img/image-20241018200555840.png)
+
+1.  CTRL设置为0是为了防止一开始初始化系统时,里面设置了系统计时器,从而产生不必要的影响因素
+2.  HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK_DIV8):设置系统总线来源,这里说的是来源为HCLK(即APH总线)经过/8分频得到的
+3.  g_fac_us表示的是sysclk/8后每1us占用多少频率
+
+
+
+### usart
+
