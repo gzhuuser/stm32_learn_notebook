@@ -1287,10 +1287,6 @@ LOAD可以由我们人为设定,这样就可以去控制时间,从而起到计�
 2.  HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK_DIV8):设置系统总线来源,这里说的是来源为HCLK(即APH总线)经过/8分频得到的
 3.  g_fac_us表示的是sysclk/8后每1us占用多少频率
 
-![image-20241018200914807](img/image-20241018200914807.png)
-
-
-
 
 
 
