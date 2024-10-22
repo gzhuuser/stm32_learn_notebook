@@ -1623,5 +1623,360 @@ F1的话BRR和LCKR用的不多, 所以只需要关注CRL, CRH, IDR, ODR, BSRR这
 
 
 
+#### 注意点
+
+![image-20241021205904694](img/image-20241021205904694.png)
+
+
+
+
+
+### 通用外设驱动模型(四步法)
+
+![image-20241022115433306](img/image-20241022115433306.png)
+
+时钟设置, 参数设置, **IO设置(USART), 中断设置**(这两个是可选的)
+
+
+
+### GPIO配置步骤
+
+1.   使能时钟
+2.   设置工作模式
+3.   设置输出状态
+4.   读取输入状态
+
+![image-20241022115816802](img/image-20241022115816802.png)
+
+
+
+
+
+![image-20241022120157966](img/image-20241022120157966.png)
+
+#### GPIO初始化时钟使能
+
+![image-20241022120934025](img/image-20241022120934025.png)
+
+最核心的是里面的SET_BIT这一段: 这是一个宏定义, 表示将APB2的某个GPIO口给使能了, 通过操作位, 第二个参数宏定义为 1<< x
+
+
+
+#### GPIO_Init()
+
+查看这些参数的范围的技巧: 去到是stm32f1xx_hal_gpio.h里面, 找到这个结构体,选择后面注释部分,ctrl+f全文件查找就能找到对于的可选值
+
+![image-20241022185713759](img/image-20241022185713759.png)
+
+Pin的可选值(F1):
+
+![image-20241022185943619](img/image-20241022185943619.png)
+
+
+
+
+
+Mode设置
+
+![image-20241022190126588](img/image-20241022190126588.png)
+
+
+
+Pull设置
+
+上下拉设置
+
+![image-20241022190719829](img/image-20241022190719829.png)
+
+1.  浮空
+2.  上拉
+3.  下拉
+
+
+
+
+
+Speed速度
+
+![image-20241022190801920](img/image-20241022190801920.png)
+
+
+
+#### writenPin
+
+写入BSRR
+
+```c
+/**
+  * @brief  Sets or clears the selected data port bit.
+  *
+  * @note   This function uses GPIOx_BSRR register to allow atomic read/modify
+  *         accesses. In this way, there is no risk of an IRQ occurring between
+  *         the read and the modify access.
+  *
+  * @param  GPIOx: where x can be (A..G depending on device used) to select the GPIO peripheral
+  * @param  GPIO_Pin: specifies the port bit to be written.
+  *          This parameter can be one of GPIO_PIN_x where x can be (0..15).
+  * @param  PinState: specifies the value to be written to the selected bit.
+  *          This parameter can be one of the GPIO_PinState enum values:
+  *            @arg GPIO_PIN_RESET: to clear the port pin
+  *            @arg GPIO_PIN_SET: to set the port pin
+  * @retval None
+  */
+void HAL_GPIO_WritePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin, GPIO_PinState PinState)
+{
+  /* Check the parameters */
+  assert_param(IS_GPIO_PIN(GPIO_Pin));
+  assert_param(IS_GPIO_PIN_ACTION(PinState));
+
+  if (PinState != GPIO_PIN_RESET)
+  {
+    GPIOx->BSRR = GPIO_Pin;
+  }
+  else
+  {
+    GPIOx->BSRR = (uint32_t)GPIO_Pin << 16u;
+  }
+}
+```
+
+
+
+参数:
+
+1.   GPIO的组
+2.   对应组的端口
+3.   设置高低电平
+
+
+
+设置类型是枚举:
+
+```c
+typedef enum
+{
+  GPIO_PIN_RESET = 0u,
+  GPIO_PIN_SET
+} GPIO_PinState;
+```
+
+
+
+例子:
+
+>   如果要设置PB10的口,那么参数为:
+>
+>   HAL_GPIO_WritenPin(GPIOB,GPIO_PIN_10, 1);
+
+
+
+
+
+
+
+### 实战
+
+#### 点亮LED灯
+
+![image-20241022192236895](img/image-20241022192236895.png)
+
+HAL库中,需要将所有外设的硬件设备放到Drivers/BSP中,然后设置分组
+
+![image-20241022204400981](img/image-20241022204400981.png)
+
+然后编写led.c和led.h
+
+```c
+// led.c
+
+#include "./BSP/LED/led.h"
+
+
+void led_init()
+{
+	// PB5 is LED IO
+	GPIO_InitTypeDef gpio_init_struct;
+	__HAL_RCC_GPIOB_CLK_ENABLE();
+	
+	gpio_init_struct.Pin = GPIO_PIN_5;
+	gpio_init_struct.Mode = GPIO_MODE_OUTPUT_PP;
+	gpio_init_struct.Speed = GPIO_SPEED_LOW;
+	
+	HAL_GPIO_Init(GPIOB, &gpio_init_struct);
+	// close the LED at init
+	// In push-pull mode, when PinState is set to 1, the actual output is 0;
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);
+	
+}
+
+```
+
+1.   使能时钟
+2.   配置IO口属性
+3.   初始化IO口电平值
+
+
+
+led.h
+
+```c
+#ifndef __LED_H
+#define __LED_H
+
+#include "./SYSTEM/sys/sys.h"
+void led_init(void);
+
+#endif
+
+```
+
+>   [!IMPORTANT]
+>
+>   一定要添加#include "./SYSTEM/sys/sys.h", 这个是初始化系统里面的库的,不导入会报一堆找不到库的错误
+
+
+
+回到main函数,导入后写入即可
+
+```c
+#include "./SYSTEM/sys/sys.h"
+#include "./SYSTEM/delay/delay.h"
+#include "./SYSTEM/usart/usart.h"
+#include "./BSP/LED/led.h"
+
+
+int main(void)
+{
+    HAL_Init();                                 /* ³õÊ¼»¯HAL¿â */
+    sys_stm32_clock_init(RCC_PLL_MUL9);         /* ÉèÖÃÊ±ÖÓ,72M */
+    delay_init(72);                             /* ³õÊ¼»¯ÑÓÊ±º¯Êý */
+    led_init();                                 /* ³õÊ¼»¯LED */
+    
+    while(1)
+    {
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);                              
+        delay_ms(500);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);                               
+        delay_ms(500);
+    }
+}
+
+
+```
+
+
+
+也可以用翻转函数
+
+```c
+#include "./SYSTEM/sys/sys.h"
+#include "./SYSTEM/delay/delay.h"
+#include "./SYSTEM/usart/usart.h"
+#include "./BSP/LED/led.h"
+
+
+int main(void)
+{
+    HAL_Init();                                 /* ³õÊ¼»¯HAL¿â */
+    sys_stm32_clock_init(RCC_PLL_MUL9);         /* ÉèÖÃÊ±ÖÓ,72M */
+    delay_init(72);                             /* ³õÊ¼»¯ÑÓÊ±º¯Êý */
+    led_init();                                 /* ³õÊ¼»¯LED */
+    
+    while(1)
+    {
+				HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_5);
+        delay_ms(200);
+    }
+}
+```
+
+
+
+
+
+#### 通过Key来控制一个LED灯
+
+
+
+目的: 学习GPIO的输入功能
+
+![image-20241022205126397](img/image-20241022205126397.png)
+
+![image-20241022205135184](img/image-20241022205135184.png)
+
+main函数
+
+```c
+#include "./SYSTEM/sys/sys.h"
+#include "./SYSTEM/delay/delay.h"
+#include "./SYSTEM/usart/usart.h"
+#include "./BSP/LED/led.h"
+#include "./BSP/KEY/key.h"
+
+
+int main(void)
+{
+    HAL_Init();                                 /* ³õÊ¼»¯HAL¿â */
+    sys_stm32_clock_init(RCC_PLL_MUL9);         /* ÉèÖÃÊ±ÖÓ,72M */
+    delay_init(72);                             /* ³õÊ¼»¯ÑÓÊ±º¯Êý */
+    led_init();                                 /* ³õÊ¼»¯LED */
+	key_init();
+    
+    while(1)
+    {
+			if(key_scan())
+			{
+				HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_5);
+			}
+			else
+			{
+				delay_ms(10);
+			}
+    }
+}
+```
+
+记得初始化
+
+
+
+key.c文件
+
+```c
+#include "./BSP/KEY/key.h"
+#include "./SYSTEM/delay/delay.h"
+
+void key_init()
+{
+    GPIO_InitTypeDef gpio_init_struct;
+    __HAL_RCC_GPIOE_CLK_ENABLE();  
+    
+    gpio_init_struct.Pin = GPIO_PIN_4; 
+    gpio_init_struct.Mode = GPIO_MODE_INPUT;  
+    gpio_init_struct.Pull = GPIO_PULLUP;  
+    
+    HAL_GPIO_Init(GPIOE, &gpio_init_struct);
+}
+
+// 
+
+uint8_t key_scan(void)
+{
+	// key_down: ReadPin is 0
+	if(HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_4) == 0)
+	{
+        	// 防抖动
+			delay_ms(10);
+			if(HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_4) == 0)
+			{
+				while(HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_4) == 0);
+				return 1;
+			}
+				
+	}
+	return 0; 
+}
+```
+
 
 
