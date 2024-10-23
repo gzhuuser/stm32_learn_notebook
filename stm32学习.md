@@ -1,4 +1,10 @@
-[TOC]
+
+
+
+
+
+
+
 
 
 
@@ -1977,6 +1983,212 @@ uint8_t key_scan(void)
 	return 0; 
 }
 ```
+
+
+
+
+
+
+
+
+
+
+
+## 中断
+
+![image-20241023193644798](img/image-20241023193644798.png) 
+
+
+
+中断使用的场景:
+
+1.   实时控制: 在确定时间内做出对事件的响应
+2.   故障处理: 检测到故障,第一时间处理
+3.   数据传输: 收到外部的数据
+
+>   [!CAUTION]
+>
+>   中断不会一直占用CPU资源
+
+
+
+
+
+### GPIO外部中断简图
+
+![image-20241023194251725](img/image-20241023194251725.png)
+
+
+
+
+
+
+
+
+
+### NVIC
+
+NVIC: Nested vectored interrupt controller 嵌套向量中断控制器,属于内核(M3/4/7)
+
+![image-20241023194645797](img/image-20241023194645797.png)
+
+
+
+随着型号越来越高,用到的外设资源越来越多,所有外部中断也就越来越多,每当发送中断后,CPU都会自动找到中断向量表中的服务函数来处理这些中断
+
+
+
+#### 中断向量表:
+
+![image-20241023194744539](img/image-20241023194744539.png)
+
+可以在start文件中找到
+
+![image-20241023194957841](img/image-20241023194957841.png)
+
+#### NVIC相关寄存器
+
+![image-20241023195116666](img/image-20241023195116666.png)
+
+-   对于F1, ISER和ICER有16个位是保留的,因为属于内部,由CPU管理,这个只用来使能外部中断
+-   IPR只用高四位,所有只有$2^4$个优先级,也就是16个中断优先级
+
+
+
+
+
+#### 工作原理
+
+![image-20241023195413207](img/image-20241023195413207.png)
+
+
+
+#### 中断优先级
+
+1.  抢占优先级(pre)：高抢占优先级可以打断正在执行的低抢占优先级中断
+2.  响应优先级(sub)：当抢占优先级相同时，响应优先级高的先执行，但是不能互相打断(已经在执行的程序哪怕响应优先级高也不能被同级打断)
+3.  抢占和响应都相同的情况下，自然优先级越高的，先执行
+4.  自然优先级：中断向量表的优先级
+5.  **数值越小，表示优先级越高**
+
+
+
+
+
+#### 中断优先级分组
+
+![image-20241023202825236](img/image-20241023202825236.png)
+
+一个工程中一般只设置一次中断优先级分组
+
+
+
+![image-20241023203355548](img/image-20241023203355548.png)
+
+这句话的意思是: EXTI1和RTC可以打断EXTI0和Systick的执行,优先执行。而EXTI0和Systick则是以优先执行为原则,一旦有一方在执行,另一方就不能抢占, 没有执行的话,优先响应Systick
+
+
+
+#### NVIC的使用
+
+![](img/image-20241023203545141.png)
+
+
+
+
+
+##### 设置分组:
+
+```c
+void HAL_NVIC_SetPriorityGrouping(uint32_t PriorityGroup)
+{
+  /* Check the parameters */
+  assert_param(IS_NVIC_PRIORITY_GROUP(PriorityGroup));
+  
+  /* Set the PRIGROUP[10:8] bits according to the PriorityGroup parameter value */
+  NVIC_SetPriorityGrouping(PriorityGroup);
+}
+```
+
+![image-20241023204513274](img/image-20241023204513274.png)
+
+##### 设置中断优先级:
+
+```c
+void HAL_NVIC_SetPriority(IRQn_Type IRQn, uint32_t PreemptPriority, uint32_t SubPriority)
+{ 
+  uint32_t prioritygroup = 0x00U;
+  
+  /* Check the parameters */
+  assert_param(IS_NVIC_SUB_PRIORITY(SubPriority));
+  assert_param(IS_NVIC_PREEMPTION_PRIORITY(PreemptPriority));
+  
+  prioritygroup = NVIC_GetPriorityGrouping();
+  
+  NVIC_SetPriority(IRQn, NVIC_EncodePriority(prioritygroup, PreemptPriority, SubPriority));
+}
+```
+
+![image-20241023205755640](img/image-20241023205755640.png)
+
+输入参数:
+
+-   IRQn_Type IRQn: 中断表的编号
+-   uint32_t PreemptPriority 抢占优先级
+-   uint32_t SubPriority 响应优先级
+
+
+
+编号位置:
+
+![image-20241023205328919](img/image-20241023205328919.png)
+
+
+
+
+
+##### 设置使能中断
+
+```c
+void HAL_NVIC_EnableIRQ(IRQn_Type IRQn)
+{
+  /* Check the parameters */
+  assert_param(IS_NVIC_DEVICE_IRQ(IRQn));
+
+  /* Enable interrupt */
+  NVIC_EnableIRQ(IRQn);
+}
+```
+
+![image-20241023205941350](img/image-20241023205941350.png)
+
+要给谁使能,那就将对应的IRQ编号发过去就行了
+
+
+
+
+
+
+
+### EXTI
+
+External(Extended) interrupt/event Controller，外部(扩展)中断事件控制器
+
+它的主要作用是管理我们内部和外部的中断和事件处理, 如果是中断就进入NVIC, 如果是事件就自己处理了
+
+![image-20241023210233458](img/image-20241023210233458.png)
+
+![image-20241023210538299](img/image-20241023210538299.png)
+
+
+
+ 
+
+![image-20241023212135831](img/image-20241023212135831.png)
+
+
+
+
 
 
 
