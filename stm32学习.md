@@ -2698,3 +2698,249 @@ USART中断的回调机制
 ![image-20241026184358332](img/image-20241026184358332.png)
 
 以阻塞的方式发送,发不完就阻塞,直至超时 
+
+
+
+
+
+
+
+
+
+### 复用引脚
+
+**复用引脚: 即多功能 I/O 引脚,允许一个引脚可以被配置为不同的功能**
+
+判断引脚是不是复用引脚,只需要判断他的输入输出是否由GPIO控制
+
+![image-20241027160444103](img/image-20241027160444103.png)
+
+复用功能AF0-15的含义: 每个复用功能包含了不同外设的功能,比如AF1就是定时器1和定时器2的功能, AF7就是USART的通信功能,通过将对应的引脚设置为对应的AF功能,就可以让那个引脚发挥出对应的外设功能。这些需要通过设置AFRL或AFRH寄存器来定义
+
+
+
+#### F1的IO引脚复用:
+
+![image-20241027161942932](img/image-20241027161942932.png)
+
+有部分IO是无法重映射的, 所以只能在功能设计上避免冲突
+
+
+
+先查表->再决定配置寄存器的什么位置->打开对应的时钟和基础配置
+
+
+
+#### F4以上的IO引脚复用:
+
+![image-20241027162058570](img/image-20241027162058570.png)
+
+
+
+![image-20241027162304751](img/image-20241027162304751.png)
+
+![image-20241027162317032](img/image-20241027162317032.png)
+
+![image-20241027162322559](img/image-20241027162322559.png)
+
+假如我要用USART的功能,经过查表发现,是AF7的, 且用到引脚9和引脚10, 所以要将上面的AFRH9和10的寄存器位设置为0111
+
+
+
+
+
+
+
+### 编程实战
+
+通过串口接收或者发送一个字符。
+
+
+
+我们向32发送一个字符, 之后32接收后触发中断,向我们发送回这个字符
+
+设计思路:
+
+1. USART函数初始化时设置接收逻辑, 接收到外部的信息就会自动产生一个中断, 这个中断会将这个消息存放到一个变量里面。定义一个标志位,改变这个标志位从而通知发送端
+2. 发送端写到main函数里面,发现标志位被改了以后,我们就可以直接发送了数据了。
+
+
+
+原理图:
+
+![image-20241027164713195](img/image-20241027164713195.png)
+
+
+
+
+
+设置UART的初始化,同时设置接收中断函数
+
+```c
+#include "./SYSTEM/sys/sys.h"
+#include "./SYSTEM/usart/usart.h"
+
+
+
+uint8_t g_usart_rx_buf[USART_REC_LEN];
+uint8_t g_usart_rx_flag = 0; // 串口接收到了数据的标志
+UART_HandleTypeDef g_uart1_handle;  /* UART句柄 */
+
+
+/**
+ * @brief       串口X初始化函数
+ * @param       baudrate: 波特率, 根据自己需要设置波特率值
+ * @note        注意: 必须设置正确的时钟源, 否则串口波特率就会设置异常.
+ *              这里的USART的时钟源在sys_stm32_clock_init()函数中已经设置过了.
+ * @retval      无
+ */
+void usart_init(uint32_t baudrate)
+{
+    /*UART 初始化设置*/
+    g_uart1_handle.Instance = USART1;                                       /* USART_UX */
+    g_uart1_handle.Init.BaudRate = baudrate;                                  /* 波特率 */
+    g_uart1_handle.Init.WordLength = UART_WORDLENGTH_8B;                      /* 字长为8位数据格式 */
+    g_uart1_handle.Init.StopBits = UART_STOPBITS_1;                           /* 一个停止位 */
+    g_uart1_handle.Init.Parity = UART_PARITY_NONE;                            /* 无奇偶校验位 */
+    g_uart1_handle.Init.HwFlowCtl = UART_HWCONTROL_NONE;                      /* 无硬件流控 */
+    g_uart1_handle.Init.Mode = UART_MODE_TX_RX;                               /* 收发模式 */
+    HAL_UART_Init(&g_uart1_handle);                                           /* HAL_UART_Init()会使能UART1 */
+
+    /* 该函数会开启接收中断：标志位UART_IT_RXNE，并且设置接收缓冲以及接收缓冲接收最大数据量 */
+    HAL_UART_Receive_IT(&g_uart1_handle, (uint8_t *)g_rx_buffer, RXBUFFERSIZE); 
+}
+
+/**
+ * @brief       UART底层初始化函数
+ * @param       huart: UART句柄类型指针
+ * @note        此函数会被HAL_UART_Init()调用
+ *              完成时钟使能，引脚配置，中断配置
+ * @retval      无
+ */
+void HAL_UART_MspInit(UART_HandleTypeDef *huart)
+{
+    GPIO_InitTypeDef gpio_init_struct;
+
+    if (huart->Instance == USART1)                            /* 如果是串口1，进行串口1 MSP初始化 */
+    {
+        // enable the clock
+        __HAL_RCC_USART1_CLK_ENABLE();
+        __HAL_RCC_GPIOA_CLK_ENABLE();
+        
+        // init IO
+        
+        gpio_init_struct.Pin = GPIO_PIN_9;                   /* LED0引脚 */
+        gpio_init_struct.Mode = GPIO_MODE_AF_PP;            /* 推挽输出 */
+        gpio_init_struct.Speed = GPIO_SPEED_FREQ_HIGH;          /* 高速 */
+        HAL_GPIO_Init(GPIOA, &gpio_init_struct);       /* 初始化LED0引脚 */
+        
+        
+        gpio_init_struct.Pin = GPIO_PIN_10;                   /* LED0引脚 */
+        gpio_init_struct.Mode = GPIO_MODE_AF_INPUT;            /* 输入 */
+        HAL_GPIO_Init(GPIOA, &gpio_init_struct);       /* 初始化LED0引脚 */
+        
+        HAL_NVIC_SetPriority(USART1_IRQn, 3, 3);
+        HAL_NVIC_EnableIRQ(USART1_IRQn);
+    }
+}
+
+
+
+/**
+ * @brief       串口1中断服务函数
+ * @param       无
+ * @retval      无
+ */
+void USART1_IRQHandler(void)
+{
+    HAL_UART_IRQHandler(&g_uart1_handle);   /* 为防止不断有中断到来,先禁用中断功能, 然后调用HAL库中断处理公用函数 */
+}
+
+/**
+ * @brief       串口数据接收回调函数
+                数据处理在这里进行
+ * @param       huart:串口句柄
+ * @retval      无
+ */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    /* 设置接收标志 */
+    g_usart_rx_flag = 1;
+    
+    /* 重新开启接收中断 */
+    HAL_UART_Receive_IT(&g_uart1_handle, (uint8_t *)g_rx_buffer, 1);
+}
+
+
+```
+
+
+
+步骤:
+
+1. 配置USART一些基础配置,如选择哪个串口, 波特率是多少, 停止位, 字长之类的
+2. 配置USART初始化HAL_UART_Init(), 他会自动调用HAL_UART_MspInit(), 我们只需要配置这个MSPInit函数即可
+   1. 打开USART的时钟和GPIO的时钟
+   2. 对GPIO的引脚做设置, 分别对PA9和PA10做配置, PA9是TX口,发送的,所以是推挽复用。PA10是RX口,接收的,所以是复用输入
+   3. 设置NVIC的中断优先级
+3. 编写中断服务函数, USART1的终端服务函数在.s启动文件里面找,USART1_IRQHandler()
+4. 编写UART1的接收中断回调处理函数HAL_UART_RxCpltCallback, 把接收标志位设置为1,表示我已接收到了数据,告诉主函数运行的发送程序要发送信息了
+
+
+
+主函数:
+
+```c
+#include "./stm32f1xx_it.h"
+#include "./SYSTEM/sys/sys.h"
+#include "./SYSTEM/usart/usart.h"
+#include "./SYSTEM/delay/delay.h"
+#include "./BSP/LED/led.h"
+
+
+int main(void)
+{
+    /* 初始化部分 */
+    HAL_Init();
+    sys_stm32_clock_init(RCC_PLL_MUL9);
+    delay_init(72);
+    usart_init(115200);
+    
+    while (1)
+    {
+        if (g_usart_rx_flag == 1)
+        {
+            /* 发送数据回去 */
+            HAL_UART_Transmit(&g_uart1_handle, g_rx_buffer, 1, 100);
+            
+            /* 发送换行 */
+            uint8_t newline[] = "\r\n";
+            HAL_UART_Transmit(&g_uart1_handle, newline, 2, 100);
+            
+            /* 清除标志 */
+            g_usart_rx_flag = 0;
+        }
+        
+        delay_ms(10);  // 适当延时
+    }
+}
+
+```
+
+
+
+
+
+关键函数:
+
+1. HAL_UART_Receive_IT(&g_uart1_handle, (uint8_t *)g_rx_buffer, RXBUFFERSIZE); 配置接收事件,如果收到信息后会存放在g_rx_buffer这个buffer池里面, 每次接收RXBUFFERSIZE
+2. /* 重新开启接收中断 */
+       HAL_UART_Receive_IT(&g_uart1_handle, (uint8_t *)g_rx_buffer, 1);
+3. 注意点,每次触发HAL_UART_IRQHandler函数时,我们都会关闭这个Receive_IT的使能,所以在回调函数的时候要记得重新打开
+
+
+
+
+
+
+
