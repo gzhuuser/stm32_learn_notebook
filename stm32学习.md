@@ -2972,7 +2972,160 @@ int main(void)
 
 
 
+### IWDG寄存器
+
+
+
+![image-20241029114539555](img/image-20241029114539555.png)
+
+
+
+![image-20241029115019674](img/image-20241029115019674.png)
+
+
+
+![image-20241029115025729](img/image-20241029115025729.png)
+
+![image-20241029115505737](img/image-20241029115505737.png)
+
+![image-20241029115605360](img/image-20241029115605360.png)
+
+ 
 
 
 
 
+
+### 计算IWDG的时间
+
+![image-20241029120032459](img/image-20241029120032459.png)
+
+$F_{IWDG}$在F1中被设置为了40kHZ,  rlr就是要计数多少次, psc是每次计算算多少个频率
+
+![image-20241029120336641](img/image-20241029120336641.png)
+
+
+
+### IWDG配置步骤
+
+只有两步
+
+![image-20241030201246403](img/image-20241030201246403.png)
+
+![image-20241030201430993](img/image-20241030201430993.png)
+
+
+
+喂狗的时机: 低于窗口寄存器的值且大于0x0时进行喂狗, 只有F7和H7才有的
+
+![image-20241030203318957](img/image-20241030203318957.png)
+
+窗口寄存器: IWDG_WINR: 12位,最大可设置为4096
+
+
+
+
+
+### 编程实战
+
+![image-20241030203620430](img/image-20241030203620430.png)
+
+```c
+/**
+ ****************************************************************************************************
+ * @file        main.c
+ * @author      ÕýµãÔ­×ÓÍÅ¶Ó(ALIENTEK)
+ * @version     V1.0
+ * @date        2020-04-22
+ * @brief       ¶ÀÁ¢¿´ÃÅ¹· ÊµÑé
+ * @license     Copyright (c) 2020-2032, ¹ãÖÝÊÐÐÇÒíµç×Ó¿Æ¼¼ÓÐÏÞ¹«Ë¾
+ ****************************************************************************************************
+ * @attention
+ *
+ * ÊµÑéÆ½Ì¨:ÕýµãÔ­×Ó STM32F103¿ª·¢°å
+ * ÔÚÏßÊÓÆµ:www.yuanzige.com
+ * ¼¼ÊõÂÛÌ³:www.openedv.com
+ * ¹«Ë¾ÍøÖ·:www.alientek.com
+ * ¹ºÂòµØÖ·:openedv.taobao.com
+ *
+ ****************************************************************************************************
+ */
+
+#include "./SYSTEM/sys/sys.h"
+#include "./SYSTEM/usart/usart.h"
+#include "./SYSTEM/delay/delay.h"
+#include "./BSP/LED/led.h"
+#include "./BSP/IWDG/wdg.h"
+#include "./BSP/KEY/key.h"
+
+
+int main(void)
+{
+    HAL_Init();                             /* ³õÊ¼»¯HAL¿â */
+    sys_stm32_clock_init(RCC_PLL_MUL9);     /* ÉèÖÃÊ±ÖÓ, 72Mhz */
+    delay_init(72);                         /* ÑÓÊ±³õÊ¼»¯ */
+    usart_init(115200);                     /* ´®¿Ú³õÊ¼»¯Îª115200 */
+    iwdg_init(IWDG_PRESCALER_32, 1250);      /* Ô¤·ÖÆµÊýÎª64,ÖØÔØÖµÎª625,Òç³öÊ±¼äÔ¼Îª1s */
+		printf("dog feed please!!!\r\n");
+
+    while (1)
+    {
+
+        delay_ms(1000);
+				iwdg_feed();
+				printf("feed success\r\n");
+    }
+}
+
+```
+
+初始化后,通过延时函数来模拟,每1s喂一次,这样就会一直打印feed success, 如果大于1s就是未来得及喂狗,这时候就会不断重启, 一直打印dog feed please
+
+
+
+初始化函数:
+
+1.   设置prer, 这个是分频系数,有:IWDG_PRESCALER_1 - IWDG_PRESCALER_128还是256
+2.   设置rlr, 这个需要计算
+
+```c
+#include "./BSP/IWDG/wdg.h"
+
+IWDG_HandleTypeDef g_iwdg_handle;
+
+void iwdg_init(uint8_t prer, uint16_t rlr)
+{
+	g_iwdg_handle.Instance = IWDG;
+	g_iwdg_handle.Init.Prescaler =  prer;
+	g_iwdg_handle.Init.Reload = rlr;
+	HAL_IWDG_Init(&g_iwdg_handle);
+	
+}
+
+void iwdg_feed(void)
+{
+	HAL_IWDG_Refresh(&g_iwdg_handle);
+}
+```
+
+![image-20241030211346329](img/image-20241030211346329.png)
+
+![image-20241030211352780](img/image-20241030211352780.png)
+
+如果需要1s重启可以选择16往上的分频系数,然后计算
+
+
+
+
+
+
+
+
+
+## WWDG
+
+窗口看门狗
+
+![image-20241030215008922](img/image-20241030215008922.png)
+
+在不同区间喂狗会产生不同的信号
