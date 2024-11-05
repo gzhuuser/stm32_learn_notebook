@@ -3234,3 +3234,158 @@ WWDG是没有重装载寄存器的,只需要对T[6:0]进行写入操作即可
 
 
 
+
+
+### WWDG配置步骤
+
+![image-20241105114632059](img/image-20241105114632059.png)
+
+![image-20241105114723116](img/image-20241105114723116.png)
+
+
+
+
+
+### 编程实战
+
+预设条件
+
+![image-20241105115048629](img/image-20241105115048629.png)
+
+
+
+(T[5:0]+1) = 0x7F - 0x5F = 32
+
+所以计算下来, Tout就是29.13ms
+
+
+
+全部时间就是: T[5:0] = 0x7F - 0x3F 后得到的整个时间为58.25ms
+
+![image-20241105200746842](img/image-20241105200746842.png)
+
+代码:
+
+```c
+#include "./BSP/WDG/wdg.h"
+#include "./BSP/LED/led.h"
+
+WWDG_HandleTypeDef g_wwdg_handle;
+
+void wwdg_init(uint8_t tr, uint8_t wr, uint32_t fprer)
+{
+	g_wwdg_handle.Instance = WWDG;
+	g_wwdg_handle.Init.Counter = tr;
+	g_wwdg_handle.Init.Window = wr;
+	g_wwdg_handle.Init.Prescaler = fprer;
+	g_wwdg_handle.Init.EWIMode = WWDG_EWI_ENABLE;
+	
+	HAL_WWDG_Init(&g_wwdg_handle);
+}
+
+
+
+void HAL_WWDG_MspInit(WWDG_HandleTypeDef *hwwdg)
+{
+	//config NVIC and 
+	HAL_NVIC_SetPriority(WWDG_IRQn, 2, 3);
+	// enable NVIC
+	HAL_NVIC_EnableIRQ(WWDG_IRQn);
+	//enable CLK
+	__HAL_RCC_TIM3_CLK_ENABLE();
+}
+
+
+// NVIC Function
+void WWDG_IRQHandler(void)
+{
+	HAL_WWDG_IRQHandler(&g_wwdg_handle);
+}
+
+void HAL_WWDG_EarlyWakeupCallback(WWDG_HandleTypeDef *hwwdg)
+{
+	// When NVIC by triggered, we toggle the LED1
+	HAL_WWDG_Refresh(&g_wwdg_handle);
+	LED1_TOGGLE();
+}
+
+```
+
+在中断处理函数中,要先喂狗在保存数据,不然如果没在最短喂狗时间内喂狗会直接复位, 中断处理函数只有计数一次的时间来喂狗。
+
+
+
+规律:
+
+1.   要使能中断: 通用:HAL_NVIC_EableIRQ(xxx_IRQn)
+2.   设置优先级: 通用: HAL_NVIC_SetPriority()
+3.   喂狗:HAL_XXX_Refresh
+
+
+
+
+
+### WWDG和IWDG的区别
+
+![image-20241105202023087](img/image-20241105202023087.png)
+
+
+
+
+
+## 定时器
+
+### 定时器概述
+
+#### 软件定时原理
+
+![image-20241105204917318](img/image-20241105204917318.png)
+
+
+
+#### 定时器定时原理
+
+![image-20241105204941218](img/image-20241105204941218.png)
+
+
+
+#### 定时器分类
+
+![image-20241105211251635](img/image-20241105211251635.png)
+
+
+
+#### 定时器特征表
+
+F1:
+
+![image-20241105211908318](img/image-20241105211908318.png)
+
+
+
+H7:
+
+![image-20241105211938859](img/image-20241105211938859.png)
+
+
+
+
+
+### 基本通用和高级定时器的区别
+
+![image-20241105212017849](img/image-20241105212017849.png)
+
+
+
+
+
+
+
+
+
+### 基本定时器
+
+
+
+
+
