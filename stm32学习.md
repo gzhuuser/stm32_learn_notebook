@@ -1,3 +1,5 @@
+
+
 # STM32
 
 ![image-20240928094843788](.\img\image-20240928094843788.png)
@@ -1343,6 +1345,156 @@ void delay_ms(uint16_t nms)
 ### usart
 
 
+
+
+
+
+
+
+
+## HAL库使用规律
+
+### 句柄
+
+句柄是初始化外设的必备的一个参数,每个init函数都需要传入一个初始化句柄,句柄的通用命名规则是:
+
+PPP_HandleTypeDef xxx;
+
+-   PPP是外设的名字
+-   HandleTypeDef表示句柄
+-   具体句柄里面的内容需要看说明文档
+
+
+
+例子:
+
+```c
+// USART串口初始化
+UART_HandlerTypeDef uart;
+
+// 定时器初始化
+TIM_HandlerTypeDef Tim;
+
+// 初始化GPIO
+GPIO_HandlerTypeDef gpio;
+
+//初始化ADC
+ADC_HandlerTypeDef adc;
+```
+
+
+
+
+
+
+
+
+
+### 初始化
+
+初始化函数是对任何外设都有的, 用来初始化这个外设,包括参数配置,使能等, 通用格式:
+
+HAL_PPP_Init(PPP_HandlerTypeDef * PPP);
+
+
+
+不同的初始化函数可能会有一些参数上的不同,但是基本都要一个HanderTypeDef句柄
+
+```c
+HAL_UART_Init(UART_HandlerTypeDef);
+
+HAL_Tim_Base_Init(UART_HandlerTypeDef);
+```
+
+
+
+
+
+
+
+### 使能时钟
+
+__HAL_RCC_PPP_CLK_ENABLE();
+
+
+
+```c
+    __HAL_RCC_I2C1_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+```
+
+
+
+
+
+### 中断
+
+中断通常是四步走:
+
+1.   设置优先级
+2.   设置使能
+3.   设置中断处理函数
+4.   设置中断回调函数
+
+
+
+PPP_IRQn 是外设变化,再startup文件中定义
+
+先设置优先级后设置使能, 优先级设置函数:固定
+
+```c
+HAL_NVIC_SetPriority(PPP_IRQn, x, x);
+```
+
+使能函数:固定
+
+```c
+HAL_NVIC_EnableIRQ(PPP_IRQn);
+```
+
+
+
+中断服务函数:
+
+```c
+void PPP_IRQHandler(void)
+{
+    HAL_PPP_IRQHandler(PPP_HandlerTypeDef *xxx);
+}
+```
+
+
+
+调用中断函数后,系统会自动调用相应的回调函数
+
+
+
+中断回调函数:
+
+遵循格式: HAL_PPP_EventName_Callback()
+
+常见的中断事件:
+
+GPIO中断:
+
+```c
+HAL_GPIO_EXIT_Callback(); //Exteral Interrupt
+```
+
+定时器相关
+
+```c
+HAL_TIM_PeriodElapsedCallball(); // 周期性中断
+HAL_TIM_PWM_PulseFinishedCallball(); // 脉冲发送完成
+HAL_TIM_IC_CaptureCallball(); // 输入捕获
+```
+
+通信相关
+
+```c
+HAL_UART_RxCallball(); // 接收完成
+HAL_UART_TxCallball(); // 发送完成
+```
 
 
 
