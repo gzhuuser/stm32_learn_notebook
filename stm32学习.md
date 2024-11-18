@@ -3959,3 +3959,42 @@ void HAL_TIM_PWM_MspInit(TIM_HandleTypeDef *htim)
 }
 ```
 
+main函数
+
+```c
+#include "./SYSTEM/sys/sys.h"
+#include "./SYSTEM/usart/usart.h"
+#include "./SYSTEM/delay/delay.h"
+#include "./BSP/LED/led.h"
+#include "./BSP/TIMER/gtim.h"
+
+extern TIM_HandleTypeDef g_timx_pwm_chy_handle;     /* ¶¨Ê±Æ÷x¾ä±ú */
+
+int main(void)
+{
+    uint16_t ledrpwmval = 0;
+    uint8_t dir = 1;
+    
+    HAL_Init();                             /* ³õÊ¼»¯HAL¿â */
+    sys_stm32_clock_init(RCC_PLL_MUL9);     /* ÉèÖÃÊ±ÖÓ, 72Mhz */
+    delay_init(72);                         /* ÑÓÊ±³õÊ¼»¯ */
+    usart_init(115200);                     /* ´®¿Ú³õÊ¼»¯Îª115200 */
+    led_init();                             /* ³õÊ¼»¯LED */
+    gtim_timx_pwm_chy_init(5000 - 1, 72 - 1);/* 1MhzµÄ¼ÆÊýÆµÂÊ,2KhzµÄPWM. */
+
+    while (1)
+    {
+        delay_ms(10);
+		if(dir) ledrpwmval++;
+		else ledrpwmval--;
+		
+		if(ledrpwmval > 5000) dir=0;
+		if(ledrpwmval == 0) dir = 1;
+		__HAL_TIM_SET_COMPARE(&g_timx_pwm_chy_handle, TIM_CHANNEL_2, ledrpwmval);
+    }
+}
+
+
+
+```
+
