@@ -3637,3 +3637,325 @@ ClockDivision只有在通用和高级寄存器在有用
 RepetitionCounter也是只有在高级寄存器才有
 
 AutoReloadPreload: 控制CR1寄存器中的位7, 控制是否让ARR寄存器有缓存功能
+
+
+
+
+
+#### 案例
+
+使用定时器6实现500ms定时更新中断,翻转LED灯
+
+![image-20241118094336264](img/image-20241118094336264.png)
+
+Tout=500ms
+
+Ft=72MHz
+
+PSC我们自己带入,然后求出ARR
+
+
+
+代码:
+
+```c
+#include "./BSP/LED/led.h"
+#include "./BSP/TIMER/btim.h"
+
+
+TIM_HandleTypeDef g_timx_handle;  /* ¶¨Ê±Æ÷¾ä±ú */
+
+
+void btim_timx_int_init(uint16_t arr, uint16_t psc)
+{
+    g_timx_handle.Instance = BTIM_TIMX_INT;                      /* Í¨ÓÃ¶¨Ê±Æ÷X */
+    g_timx_handle.Init.Prescaler = psc;                          /* ÉèÖÃÔ¤·ÖÆµÏµÊý */
+    g_timx_handle.Init.CounterMode = TIM_COUNTERMODE_UP;         /* µÝÔö¼ÆÊýÄ£Ê½ */
+    g_timx_handle.Init.Period = arr;          	/* ×Ô¶¯×°ÔØÖµ */
+	
+	
+    HAL_TIM_Base_Init(&g_timx_handle);
+
+    HAL_TIM_Base_Start_IT(&g_timx_handle);    /* Ê¹ÄÜ¶¨Ê±Æ÷x¼°Æä¸üÐÂÖÐ¶Ï */
+}
+
+
+void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == BTIM_TIMX_INT)
+    {
+        BTIM_TIMX_INT_CLK_ENABLE();                     
+        HAL_NVIC_SetPriority(BTIM_TIMX_INT_IRQn, 1, 3);
+        HAL_NVIC_EnableIRQ(BTIM_TIMX_INT_IRQn);        
+    }
+}
+
+void BTIM_TIMX_INT_IRQHandler(void)
+{
+    HAL_TIM_IRQHandler(&g_timx_handle); /* ¶¨Ê±Æ÷ÖÐ¶Ï¹«¹²´¦Àíº¯Êý */
+}
+
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == BTIM_TIMX_INT)
+    {
+        LED1_TOGGLE(); 
+    }
+}
+
+
+
+
+
+```
+
+
+
+头文件
+
+```c
+#ifndef __BTIM_H
+#define __BTIM_H
+
+#include "./SYSTEM/sys/sys.h"
+ 
+#define BTIM_TIMX_INT                       TIM6
+#define BTIM_TIMX_INT_IRQn                  TIM6_DAC_IRQn
+#define BTIM_TIMX_INT_IRQHandler            TIM6_DAC_IRQHandler
+#define BTIM_TIMX_INT_CLK_ENABLE()          do{ __HAL_RCC_TIM6_CLK_ENABLE(); }while(0)   
+
+
+void btim_timx_int_init(uint16_t arr, uint16_t psc);    /* »ù±¾¶¨Ê±Æ÷ ¶¨Ê±ÖÐ¶Ï³õÊ¼»¯º¯Êý */
+
+#endif
+
+
+```
+
+
+
+
+
+### 通用定时器简介
+
+![image-20241118105705053](img/image-20241118105705053.png)
+
+#### 框图
+
+![image-20241118111629602](img/image-20241118111629602.png)
+
+全部定时器都是基于时基单元做扩展的
+
+
+
+#### 计数器时钟源
+
+![image-20241118111727148](img/image-20241118111727148.png)
+
+
+
+外部时钟模式2: 来自TI1F和TI1FP1和TI2FP2
+
+1.  TI1F: 是双边缘触发, 上升沿下降沿都会计数一次
+2.  TI1FP1和TI2FP2是单边缘触发, 每次只会计数一次
+
+
+
+设置方式
+
+![image-20241118143100141](img/image-20241118143100141.png)
+
+通过控制SMCR宏模式控制器来决定时钟源
+
+
+
+##### 外部时钟模式1:
+
+![image-20241118144630396](img/image-20241118144630396.png)
+
+
+
+
+
+
+
+##### 外部时钟模式2
+
+![image-20241118144657832](img/image-20241118144657832.png)
+
+
+
+ETP边缘检测触发器, 用来检测是上升沿还是下降沿的信号
+
+
+
+| 特性             | **TRGI**                    | **ETRF**                   |
+| ---------------- | --------------------------- | -------------------------- |
+| **定义**         | 定时器触发输入信号的总称    | 一种具体的外部触发信号源   |
+| **信号来源**     | 来自 TS[2:0] 配置的多种信号 | 来自定时器的外部引脚 (ETR) |
+| **是否唯一来源** | 包括多种可能来源            | 专指外部引脚输入信号       |
+| **用途**         | 用于触发定时器行为          | 提供高可靠性的外部触发     |
+
+
+
+##### 使用一个定时器作为其他定时器的预分频器
+
+![image-20241118150632654](img/image-20241118150632654.png)
+
+![image-20241118150748970](img/image-20241118150748970.png)
+
+1.  MMS (Master Mode Selection) = 010
+
+-   这是定时器1的主模式选择参数
+-   值为010表示当计数器更新事件发生时会触发TRGO1信号
+
+2.   TS (Trigger Selection) = 000
+
+-   这是定时器2的触发源选择参数
+-   值为000表示它选择了ITR1作为触发输入源，也就是来自定时器1的TRGO信号
+
+3.   SMS (Slave Mode Selection) = 111
+
+-   这是定时器2的从模式选择参数
+-   值为111表示外部时钟模式1，即定时器2将被ITR1信号触发计数
+
+
+
+
+
+### 通用定时器输出PWM实验
+
+#### 通用定时器的输出结构:
+
+![image-20241118155321428](img/image-20241118155321428.png)
+
+![image-20241118155345409](img/image-20241118155345409.png)
+
+
+
+流程:
+
+1.   写入CCR1寄存器, 设定计数器的填充值
+2.   控制compare_transfer的条件来决定什么时候写入影子寄存器
+3.   通过比较影子寄存器和计数器的值来控制什么时候触发信号
+
+
+
+compare_transfer的条件:
+
+1.   CCR1的高低位是否有写入
+2.   CC1S[1:0]是否为00, 00表示是输出模式
+3.   预装载使能OC1PE是否被开启,当OC1PE被使能的时候,只能考时钟基准单元UEV来触发这个填充事件
+
+
+
+
+
+![image-20241118160924334](img/image-20241118160924334.png)
+
+在计数模式为向下计数的情况下:
+
+当CNT>CCR1的值的时候, 这里的输出参考信号输出的是有效电平高电平
+
+
+
+#### PWM的输出实验
+
+![image-20241118164219099](img/image-20241118164219099.png)
+
+![image-20241118165511785](img/image-20241118165511785.png)
+
+
+
+#### PWM输出实验配置
+
+![image-20241118170600059](img/image-20241118170600059.png)
+
+![image-20241118170636392](img/image-20241118170636392.png)
+
+
+
+这个TIM_OC_InitTypeDef是表示Config的函数的初始化
+
+![image-20241118171030306](img/image-20241118171030306.png)
+
+#### 编程实战
+
+通过定时器输出的PWM控制LED0，实现类似手机呼吸灯的效果
+
+![image-20241118194745648](img/image-20241118194745648.png)
+
+
+
+PWM输出比较模式有8种,分别为:
+
+1.   冻结模式 000
+2.   强制高电平 010
+3.   强制低电平 001
+4.   比较匹配时输出低电平 011
+5.   比较匹配时输出高电平 100
+6.   PWM模式1 110
+7.   PWM模式2 111
+8.   单脉冲模式 101
+
+
+
+
+
+![image-20241118195645607](img/image-20241118195645607.png)
+
+IO口LED是PB5, 可以重映射为TIM3_CH2
+
+```c
+#include "./BSP/TIMER/gtim.h"
+#include "./BSP/LED/led.h"
+
+
+TIM_HandleTypeDef g_timx_pwm_chy_handle;
+
+void gtim_timx_pwm_chy_init(uint16_t arr, uint16_t psc)
+{
+	TIM_OC_InitTypeDef timx_oc_pwm;
+	// 初始化pwm的配置, 设置定时器, 分频系数, 重载值
+	g_timx_pwm_chy_handle.Instance = TIM3;
+	g_timx_pwm_chy_handle.Init.Prescaler = psc;
+	g_timx_pwm_chy_handle.Init.AutoReloadPreload = arr;
+	g_timx_pwm_chy_handle.Init.CounterMode = TIM_COUNTERMODE_UP;
+	
+	HAL_TIM_PWM_Init(&g_timx_pwm_chy_handle);
+	// 设置pwm输出模式的属性
+	timx_oc_pwm.OCMode = TIM_OCMODE_PWM1;
+	timx_oc_pwm.Pulse = arr/2;
+	timx_oc_pwm.OCPolarity = TIM_OCPOLARITY_LOW;
+	HAL_TIM_PWM_ConfigChannel(&g_timx_pwm_chy_handle, &timx_oc_pwm, TIM_CHANNEL_2);
+	HAL_TIM_PWM_Start(&g_timx_pwm_chy_handle, TIM_CHANNEL_2);
+}
+
+void HAL_TIM_PWM_MspInit(TIM_HandleTypeDef *htim)
+{
+	 //config NVIC, GPIO, clock
+	if(htim->Instance == TIM3)
+	{
+        // 启用系统时钟和定时器时钟, 勇系统时钟作为定时器的时钟源
+		GPIO_InitTypeDef gpio_init_struct;
+		__HAL_RCC_GPIOB_CLK_ENABLE();
+		__HAL_RCC_TIM3_CLK_ENABLE();
+		
+		//config LED
+		gpio_init_struct.Mode = GPIO_MODE_AF_PP;
+		gpio_init_struct.Pin = GPIO_PIN_5;
+		gpio_init_struct.Speed = GPIO_SPEED_FREQ_HIGH;
+		gpio_init_struct.Pull = GPIO_PULLUP;
+		HAL_GPIO_Init(GPIOB, &gpio_init_struct);
+		// config REMAP of PB5
+        // 启动GPIO引脚的复用功能
+		__HAL_RCC_AFIO_CLK_ENABLE();
+		// make the bits of REMAP[11:10] to 10
+        // 这个函数会自动将REMAP寄存器种的11和10号位置设置为10, 表示复用PB5为CH2, 这时候PB5的口就变成了PWM的输出了, 然后控制pwm就能控制灯闪烁
+		__HAL_AFIO_REMAP_TIM3_PARTIAL();
+		
+	}
+}
+```
+
