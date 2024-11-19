@@ -3920,7 +3920,7 @@ void gtim_timx_pwm_chy_init(uint16_t arr, uint16_t psc)
 	// 初始化pwm的配置, 设置定时器, 分频系数, 重载值
 	g_timx_pwm_chy_handle.Instance = TIM3;
 	g_timx_pwm_chy_handle.Init.Prescaler = psc;
-	g_timx_pwm_chy_handle.Init.AutoReloadPreload = arr;
+	g_timx_pwm_chy_handle.Init.Period = arr;
 	g_timx_pwm_chy_handle.Init.CounterMode = TIM_COUNTERMODE_UP;
 	
 	HAL_TIM_PWM_Init(&g_timx_pwm_chy_handle);
@@ -3968,33 +3968,105 @@ main函数
 #include "./BSP/LED/led.h"
 #include "./BSP/TIMER/gtim.h"
 
-extern TIM_HandleTypeDef g_timx_pwm_chy_handle;     /* ¶¨Ê±Æ÷x¾ä±ú */
+extern TIM_HandleTypeDef g_timx_pwm_chy_handle;     /* 定时器x句柄 */
 
 int main(void)
 {
     uint16_t ledrpwmval = 0;
     uint8_t dir = 1;
     
-    HAL_Init();                             /* ³õÊ¼»¯HAL¿â */
-    sys_stm32_clock_init(RCC_PLL_MUL9);     /* ÉèÖÃÊ±ÖÓ, 72Mhz */
-    delay_init(72);                         /* ÑÓÊ±³õÊ¼»¯ */
-    usart_init(115200);                     /* ´®¿Ú³õÊ¼»¯Îª115200 */
-    led_init();                             /* ³õÊ¼»¯LED */
-    gtim_timx_pwm_chy_init(5000 - 1, 72 - 1);/* 1MhzµÄ¼ÆÊýÆµÂÊ,2KhzµÄPWM. */
-
+    HAL_Init();                             /* 初始化HAL库 */
+    sys_stm32_clock_init(RCC_PLL_MUL9);     /* 设置时钟, 72Mhz */
+    delay_init(72);                         /* 延时初始化 */
+    usart_init(115200);                     /* 串口初始化为115200 */
+    led_init();                             /* 初始化LED */
+    gtim_timx_pwm_chy_init(1000 - 1, 72 - 1);/* 1Mhz的计数频率,1Mhz的PWM. */
+	
     while (1)
     {
-        delay_ms(10);
+        delay_ms(5);
 		if(dir) ledrpwmval++;
 		else ledrpwmval--;
 		
-		if(ledrpwmval > 5000) dir=0;
+		if(ledrpwmval >= 1000) dir=0;
 		if(ledrpwmval == 0) dir = 1;
 		__HAL_TIM_SET_COMPARE(&g_timx_pwm_chy_handle, TIM_CHANNEL_2, ledrpwmval);
     }
 }
 
 
-
 ```
+
+
+
+
+
+### 通用定时器的输入捕获操作
+
+
+
+#### 输入部分框图
+
+![image-20241119200821812](img/image-20241119200821812.png)
+
+![image-20241119200834733](img/image-20241119200834733.png)
+
+1.   配置CC1S选择器,只要不是00都是输入, 选择输入源
+2.   配置CKD的[1:0]
+3.   配置TIMx_CCMR1, 选择滤波方式
+4.   选择边沿检测器的触发方式,设置CC1P这个位
+5.   调整分频系数ICPS[1:0]这两个位,对应1,2,4,8
+6.   使能捕获CC1E
+
+
+
+![image-20241119201303376](img/image-20241119201303376.png)
+
+
+
+捕获事件的触发条件:
+
+![image-20241119201936494](img/image-20241119201936494.png)
+
+
+
+1.  CC1S配置对应一个或门,只要不是非0都是输入模式,与门输出的值都为1
+2.  IC1PS和CC1E都为1, 也就是捕获到了外部信号的同时,也捕获到了输入使能,这时候对应的与门就为1, 或者软件产生捕获事件,这时候CC1G为1, 与门的输出也为1, 这样就会参数一个捕获事件
+
+
+
+![image-20241119202213310](img/image-20241119202213310.png)
+
+在输入的时候是不能直接进行读操作的, 要结束输入后,才可以读,读完后才会将CCR的值转移到影子寄存器中
+
+
+
+#### 通用定时器输入捕获脉宽测量原理
+
+![image-20241119203241596](img/image-20241119203241596.png)
+
+一开始以上升沿为触发事件, 触发后改成下降沿触发, 等待下降沿触发后计算前后的时间,这就是测量原理
+
+
+
+计数频率:
+$$
+频率 = \frac{F_t}{PSC+1}
+$$
+
+
+
+
+计一个数花费的时间:
+$$
+
+时间 = \frac{PSC+1}{F_t}
+$$
+
+
+#### 实验配置步骤
+
+![image-20241119205948989](img/image-20241119205948989.png)
+
+![image-20241119210137946](img/image-20241119210137946.png)
 
