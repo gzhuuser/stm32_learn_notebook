@@ -84,5 +84,410 @@ stm32的是修正哈佛结构,修正哈佛结构和哈佛结构的区别是:
 
 
 
+
+
+## 工程目录的创建
+
+
+
+### 创建工程目录
+
+![image-20241120143808327](img/image-20241120143808327.png)
+
+-   CMSIS：Cortex微控制器软件接口标准文件，该目录下文件适用所有Cortex系列（启动文件、配置文件）
+-   DEVICE_LIB：M4对应外设的模块代码。Inc+src
+-   HARDWARE：用户实现的模块功能函数
+-   LIST：链接相关
+-   OBJ：编译产生的中间文件+hex/bin文件
+-   SYSTEM：系统相关代码
+-   USER：自定义代码（main.c）
+
+
+
+移植思路:
+
+| stm32F4xx的官方库                                            | 工程       |
+| ------------------------------------------------------------ | ---------- |
+| Libraries\STM32F4xx_StdPeriph_Driver\inc 库头文件夹Libraries\STM32F4xx_StdPeriph_Driver\src 库源文件夹 | DEVICE_LIB |
+| Project\STM32F4xx_StdPeriph_Templates\main.cProject\STM32F4xx_StdPeriph_Templates\stm32f4xx_it.h 中断函数头文件Project\STM32F4xx_StdPeriph_Templates\stm32f4xx_conf.h 配置文件Project\STM32F4xx_StdPeriph_Templates\stm32f4xx_it.c 中断函数文件 | USER       |
+| Libraries\CMSIS\Device\ST\STM32F4xx\Include\stm32f4xx.hLibraries\CMSIS\Device\ST\STM32F4xx\Source\Templates\ system_stm32f4xx.cLibraries\CMSIS\Device\ST\STM32F4xx\Include\system_stm32f4xx.h | SYSTEM     |
+| Libraries\CMSIS\Include\core_cm4_simd.hLibraries\CMSIS\Include\core_cm4.h Cortex-M4系统文件Libraries\CMSIS\Include\core_cmFunc.hLibraries\CMSIS\Include\core_cmInstr.hLibraries\CMSIS\Device\ST\STM32F4xx\Source\Templates\arm\startup_stm32f40_41xxx.s | CMSIS      |
+
+
+
+### keil5 project
+
+打开keil5，选中project-->new project-->在弹出的对话框中，选择项目保存位置。
+
+![image-20241120153520513](img/image-20241120153520513.png)
+
+选择对应的芯片型号(需要提前下载好对应的包)
+
+![image-20241120153630060](img/image-20241120153630060.png)
+
+选定型号后就要为这个项目添加需要使用的模块代码,如果使用了固件库源码复制后就不需要这个步骤了
+
+![image-20241120153722603](img/image-20241120153722603.png)
+
+设置项目文件夹结构
+
+![image-20241120153803825](img/image-20241120153803825.png)
+
+
+
+配置output, Listing, c++编译链
+
+![image-20241120153850093](img/image-20241120153850093.png)
+
+![image-20241120153855546](img/image-20241120153855546.png)
+
+![image-20241120153859400](img/image-20241120153859400.png)
+
+STM32F40_41xxx：该宏指定芯片的型号，不同型号对应的硬件代码有不同，必须定义。
+
+USE_STDPERIPH_DRIVER：该宏指定是否启用外设，定义则为启用外设，必须定义。
+
+宏定义:
+
+```c
+STM32F40_41xxx,USE_STDPERIPH_DRIVER
+```
+
+这个宏定义用来选择芯片的型号的, 可看下面的英文文档
+
+![image-20241120154603649](img/image-20241120154603649.png)
+
+
+
+
+
+完成这些就可以编译了
+
+
+
+### 编译自举模式
+
+![image-20241121091531767](img/image-20241121091531767.png)
+
+ 需要记住:
+
+1.   BOOT跳线帽结合的原理
+2.   复位电路图原理
+
+
+
+常见的Flash种类有两种:
+
+1.   NOR Flash
+2.   NAND Flash
+
+MCU中的Flash的种类属于NOR Flash
+
+NOR Flash的特定:
+
+1.   随机访问速度快,适合存储执行程序代码
+2.   可按字节读写
+3.   支持代码直接执行, 无需复制到RAM中
+
+
+
+
+
+
+
+
+
+## 如何查资料
+
+-   STM32F407数据手册: 包含了引脚分布图, 在使用复用功能时可以去查看, 在45页左右
+-   Standard Peripheral Library手册:标准库文件夹下面, 可以查看各个函数是怎么使用的,需要什么参数
+-   STM32F4xxx参考手册(中文): 可以查看各个功能模块的寄存器的详细情况
+-   GEC-STM32F407原理图: 里面有各个功能的电路图设计
+
+
+
+
+
+## 外设初始化步骤
+
+![image-20241121154353743](img/image-20241121154353743.png)
+
+1.   初始化一个句柄 PPP_InitType
+2.   给这个句柄赋值
+3.   通过调用PPP_Init(PPP_Name, PPP_InitType*)来初始化这个外设
+4.   使能外设, 一般对于复杂的外设才有, GPIO没有, PPP_Cmd()
+
+
+
+>   [!NOTE]
+>
+>   1.   配置外设时,需要先打开外设时钟,可以用RCC_AHBxPeriphClockCmd(RCC_AHBxPeriphClock_PPPx, ENABLE), 来打开
+>   2.   PPP_Deinit(PPP), 将任意外设恢复为默认值
+>   3.   
+
+
+
+
+
 ## 时钟源体系
+
+
+
+
+
+## GPIO
+
+### LED简介
+
+![image-20241121152624016](img/image-20241121152624016.png)
+
+
+
+
+
+
+
+### GPIO简介
+
+![image-20241121103045514](img/image-20241121103045514.png)
+
+
+
+标有 "FT" 的GPIO引脚可以容忍最高5V的输入电压。保护二极管确保电压被调节至3.3V，然后输入到MCU中。
+
+
+
+
+
+
+
+
+
+### 初始化流程
+
+初始化整个流程:
+
+1.   使能时钟
+2.   配置句柄结构体
+3.   初始化
+
+
+
+#### 使能时钟函数
+
+要使能某个外设的时钟，可以使用以下函数：
+
+```c
+/**
+  * @brief  使能或关闭AHB1外设时钟。
+  * @note   复位后外设时钟默认是关闭的，在访问外设寄存器前必须使能时钟。
+  * @param  RCC_AHBPeriph: 指定要使能时钟的AHB1外设。
+  *          参数可以是以下值的任意组合：
+  *            @arg RCC_AHB1Periph_GPIOA: GPIOA时钟
+  *            @arg RCC_AHB1Periph_GPIOB: GPIOB时钟
+  *            @arg RCC_AHB1Periph_GPIOC: GPIOC时钟
+  *            ...
+  * @param  NewState: 指定外设时钟的新状态。
+  *          参数可以是ENABLE或DISABLE。
+  * @retval 无
+  */
+void RCC_AHB1PeriphClockCmd(uint32_t RCC_AHB1Periph, FunctionalState NewState)
+```
+
+输入参数两个:
+
+1.   需要使能的外设时钟地址
+2.   状态: 使能和关闭使能
+
+
+
+#### GPIO初始化
+
+```c
+/**
+  * @brief  根据GPIO_InitStruct中的指定参数初始化GPIOx外设。
+  * @param  GPIOx: 指定GPIO端口（A, B, C, ...）。
+  * @param  GPIO_InitStruct: 指向包含GPIO配置信息的结构体的指针。
+  * @retval 无
+  */
+void GPIO_Init(GPIO_TypeDef* GPIOx, GPIO_InitTypeDef* GPIO_InitStruct)
+```
+
+初始化结构体结构:
+
+```c
+/**
+  * @brief   GPIO初始化结构定义
+  */
+typedef struct
+{
+  uint32_t GPIO_Pin;              /*!< 指定要配置的GPIO引脚。 */
+
+  GPIOMode_TypeDef GPIO_Mode;     /*!< 指定所选引脚的工作模式。 */
+
+  GPIOSpeed_TypeDef GPIO_Speed;   /*!< 指定所选引脚的速度。 */
+
+  GPIOOType_TypeDef GPIO_OType;   /*!< 指定所选引脚的输出类型。 */
+
+  GPIOPuPd_TypeDef GPIO_PuPd;     /*!< 指定所选引脚的上拉/下拉配置。 */
+} GPIO_InitTypeDef;
+```
+
+
+
+
+
+#### 初始化例子
+
+```c
+#include "LED.h"
+#include "stm32f4xx.h"
+
+void LED_GPIO_Config(void)
+{
+    GPIO_InitTypeDef GPIO_InitStructure;
+    
+    // 使能GPIOF时钟
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOF, ENABLE);
+    
+    // 配置PF10引脚用于LED
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;        // 选择PF10引脚
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;     // 输出模式
+    GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;    // 推挽输出
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz; // 50MHz速度
+    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;      // 上拉
+    
+    GPIO_Init(GPIOF, &GPIO_InitStructure);
+    
+    // 默认将引脚设置为高电平（LED熄灭）
+    GPIO_SetBits(GPIOF, GPIO_Pin_10);
+}
+```
+
+
+
+### 其余函数功能
+
+
+
+给某个引脚置位
+
+```c
+void GPIO_SetBits(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin)
+```
+
+
+
+给某个引脚复位
+
+```c
+void GPIO_ResetBits(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin)
+```
+
+
+
+读取某个引脚的状态
+
+```c
+uint8_t GPIO_ReadInputDataBit(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin)
+```
+
+>   [!NOTE]
+>
+>   函数`GPIO_SetBits`和`GPIO_ResetBits`由于需要进行上下文保护和恢复，性能并不高，可能比较耗时。为了更快、更高效地控制GPIO，可以考虑使用位带操作直接操作单个位。
+
+
+
+
+
+### LED流水灯例子
+
+LED.c
+
+```c
+#include "LED.h"
+#include "stm32f4xx.h"
+
+void LED_GPIO_Config(void)
+{
+    GPIO_InitTypeDef GPIO_InitStructure_LED;
+    
+    // 使能GPIO F和E时钟
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOF, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE, ENABLE);
+    
+    // 配置LED0对应的GPIO引脚PF9和PF10
+    GPIO_InitStructure_LED.GPIO_Pin = GPIO_Pin_9 | GPIO_Pin_10;       // 选择PF9和PF10引脚
+    GPIO_InitStructure_LED.GPIO_Mode = GPIO_Mode_OUT;    // 输出模式
+    GPIO_InitStructure_LED.GPIO_OType = GPIO_OType_PP;   // 推挽输出
+    GPIO_InitStructure_LED.GPIO_Speed = GPIO_Speed_50MHz;// 50MHz速度
+    GPIO_InitStructure_LED.GPIO_PuPd = GPIO_PuPd_UP;    // 上拉
+    
+    GPIO_Init(GPIOF, &GPIO_InitStructure_LED);
+	
+	// 设置E组引脚
+	GPIO_InitStructure_LED.GPIO_Pin = GPIO_Pin_13 | GPIO_Pin_14; // 选择PE13和PE14引脚
+	GPIO_Init(GPIOE, &GPIO_InitStructure_LED);
+    
+    // 设置引脚默认状态为高电平
+    GPIO_SetBits(GPIOF, GPIO_Pin_9);
+    GPIO_SetBits(GPIOF, GPIO_Pin_10);
+    GPIO_SetBits(GPIOE, GPIO_Pin_13);
+    GPIO_SetBits(GPIOE, GPIO_Pin_14);	
+}
+
+
+```
+
+main.c
+
+```c
+#include "stm32f4xx.h"
+#include "LED.h"
+
+/** @addtogroup Template_Project
+  * @{
+  */ 
+
+/* Private typedef --------------------------定义类型----------------------------*/
+/* Private define ---------------------------定义声明----------------------------*/
+/* Private macro ----------------------------宏定义------------------------------*/
+/* Private variables ------------------------定义变量----------------------------*/
+/* Private function prototypes --------------函数声明----------------------------*/
+/* Private functions ------------------------定义函数----------------------------*/
+
+/**
+  * @brief  Main program
+  * @param  None
+  * @retval None
+  */
+
+  
+
+
+int main(void)
+{
+	LED_GPIO_Config();
+	while (1)
+	{
+		// 点亮LED0（设置为低电平）
+        GPIO_ResetBits(GPIOF, GPIO_Pin_9);
+        for(uint32_t i = 0; i < 0x5FFFFF; i++);
+        // 熄灭LED0（设置为高电平）
+        GPIO_SetBits(GPIOF, GPIO_Pin_9);
+		
+		GPIO_ResetBits(GPIOF, GPIO_Pin_10);
+        for(uint32_t i = 0; i < 0x5FFFFF; i++);
+		GPIO_SetBits(GPIOF, GPIO_Pin_10);
+		
+		GPIO_ResetBits(GPIOE, GPIO_Pin_13);
+        for(uint32_t i = 0; i < 0x5FFFFF; i++);
+		GPIO_SetBits(GPIOE, GPIO_Pin_13);
+		
+		GPIO_ResetBits(GPIOE, GPIO_Pin_14);
+        for(uint32_t i = 0; i < 0x5FFFFF; i++);
+		GPIO_SetBits(GPIOE, GPIO_Pin_14);
+	}
+}
+```
 
