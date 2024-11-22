@@ -206,6 +206,18 @@ NOR Flash的特定:
 
 
 
+### 不同外设对应的时钟总线查询
+
+STM32F4xxx参考手册(中文): 2.存储器的总线架构中的2.3 存储器的映射
+
+
+
+
+
+
+
+
+
 
 
 ## 外设初始化步骤
@@ -257,13 +269,106 @@ NOR Flash的特定:
 
 
 
+### 八种模式
+
+1.   上拉输入
+2.   下拉输入
+3.   浮空输入
+4.   模拟功能
+5.   推挽输出
+6.   开漏输出
+7.   推挽复用输出
+8.   开漏复用输出
+
+
+
+上拉电阻: 能让IO引脚的默认输出为高电平, 通常电阻连接着电源
+
+下拉电阻: 能让IO引脚的默认输出为低电平, 通常电阻接地
+
+
+
+1.   上拉输入：通过上拉电阻使未接信号时默认为高电平，防止输入端悬空。
+2.   下拉输入：通过下拉电阻使未接信号时默认为低电平，防止输入端悬空。 
+3.   浮空输入：没有上拉或下拉电阻，完全依赖外部信号控制，易受干扰。
+4.   模拟功能：用于处理模拟信号（如ADC/DAC），此时引脚不再作为数字输入/输出。
+5.   推挽输出：使用两个MOS管，可直接输出高电平或低电平，输出驱动能力强，同时降低功耗。
+6.   开漏输出：仅能直接输出低电平，输出高电平时需外接上拉电阻，常用于与其他设备共享信号线（如I2C总线）。
+7.   推挽复用输出：GPIO引脚作为外设的功能引脚（如UART、SPI等），仍保留推挽结构，具备强驱动能力。
+8.   开漏复用输出：GPIO引脚作为外设的功能引脚，但采用开漏模式，需外接上拉电阻，适合多设备通信或逻辑共享。
 
 
 
 
 
+### GPIO寄存器
 
-### 初始化流程
+
+
+
+
+#### GPIOx_MODER
+
+GPIOx_MODER是模式寄存器:
+
+![image-20241122153431886](img/image-20241122153431886.png)
+
+寄存器地址 = 基地址 + 偏移地址
+
+一个GPIO组由16个IO口, 每个IO口有四个模式,分别为:
+
+1.  00: Input  输入
+2.  01: General purpose output mode 通用输出模式
+3.  10: Alternate function mode 复用模式
+4.  11: Analog mode 模拟模式
+
+
+
+
+
+#### GPIOx_OTYPER
+
+这个是配置输出模式的寄存器,有推挽和开漏两种模式, 高16位保留
+
+![image-20241122154736434](img/image-20241122154736434.png)
+
+偏移地址为0x04, 因为0x00被mode占用了, 地址是32bit,也就是四字节,所以这里在的偏移地址位0x04
+
+
+
+#### GPIOx_OSPEEDR
+
+配置输出速度
+
+![image-20241122154953964](img/image-20241122154953964.png)
+
+
+
+#### GPIOx_PUPDR
+
+配置上拉下拉的输入模式
+
+![image-20241122155035013](img/image-20241122155035013.png)
+
+
+
+#### GPIOx_BSRR
+
+置位复位寄存器
+
+![image-20241122161750727](img/image-20241122161750727.png)
+
+![image-20241122161800909](img/image-20241122161800909.png) 
+
+高16位是复位
+
+低16位是置位
+
+
+
+
+
+### GPIO初始化流程
 
 初始化整个流程:
 
@@ -274,6 +379,12 @@ NOR Flash的特定:
 
 
 #### 使能时钟函数
+
+在STM32F4xxx参考手册中, 2.3 Memory map可以查询到GPIO挂在在AHB1总线上
+
+![image-20241122145701007](img/image-20241122145701007.png)
+
+
 
 要使能某个外设的时钟，可以使用以下函数：
 
@@ -394,9 +505,139 @@ uint8_t GPIO_ReadInputDataBit(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin)
 
 >   [!NOTE]
 >
->   函数`GPIO_SetBits`和`GPIO_ResetBits`由于需要进行上下文保护和恢复，性能并不高，可能比较耗时。为了更快、更高效地控制GPIO，可以考虑使用位带操作直接操作单个位。
+>   函数`GPIO_SetBits`和`GPIO_ResetBits`由于需要进行上下文保护和恢复，性能并不高，可能比较耗时。为了更快、更高效地控制GPIO，可以考虑使用位带操作直接操作单个位。可以通过下面这个操作,直接进行位操作
+
+```c
+// 置位操作
+GPIOG->BSRRL = LED1_PIN | LED2_PIN;
+// 复位操作
+GPIOG->BSRRH = LED1_PIN | LED2_PIN;
+```
 
 
+
+### 点亮四个LED灯
+
+分两种实现方式:
+
+1.   标准库
+2.   直接寄存器操作
+
+
+
+#### 标准库操作:
+
+```c
+/**
+  ******************************************************************************
+  * @file    main.c 
+  * @author  苏向标
+  * @version V1.0.0
+  * @date    2024/11/20
+  * @brief   程序主函数
+  * @retval  None
+  ******************************************************************************
+  * 初始化发光二极管的代码
+  * 1. 使能控制四个LED灯的时钟GPIOF和GPIOE
+  * 2. 配置四个LED灯的引脚,PF9,PF10,PE13,PE14
+  * 3. 每个引脚默认高电平,即熄灭状态
+  ******************************************************************************
+  */
+void LED_GPIO_Config(void)
+{
+    GPIO_InitTypeDef GPIO_InitStructure_LED;
+    
+    // 使能GPIO F和E时钟
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOF | RCC_AHB1Periph_GPIOE, ENABLE);
+
+    // 配置LED0对应的GPIO引脚PF9
+    GPIO_InitStructure_LED.GPIO_Pin = GPIO_Pin_9 | GPIO_Pin_10;       
+    GPIO_InitStructure_LED.GPIO_Mode = GPIO_Mode_OUT;    
+    GPIO_InitStructure_LED.GPIO_OType = GPIO_OType_PP;   
+    GPIO_InitStructure_LED.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStructure_LED.GPIO_PuPd = GPIO_PuPd_UP;   
+    
+    GPIO_Init(GPIOF, &GPIO_InitStructure_LED);
+	
+	// 设置E组引脚
+	GPIO_InitStructure_LED.GPIO_Pin = GPIO_Pin_13 | GPIO_Pin_14; 
+	GPIO_Init(GPIOE, &GPIO_InitStructure_LED);
+    
+    // 设置引脚默认状态为高电平
+    GPIO_SetBits(GPIOF, GPIO_Pin_9);
+    GPIO_SetBits(GPIOF, GPIO_Pin_10);
+    GPIO_SetBits(GPIOE, GPIO_Pin_13);
+    GPIO_SetBits(GPIOE, GPIO_Pin_14);	
+}
+```
+
+
+
+#### 寄存器操作:
+
+寄存器操作需要去查文件,文件是: STM32F4xx参考手册(中文)
+
+1.   时钟使能地址: 6.3.12 RCC_AHB1ENR
+2.   GPIOE和GPIOF的地址: 2.3寄存器映射
+3.   GPIO配置寄存器的偏移地址: 7.4GPIO寄存器
+
+
+
+思路: 将地址值 转化为一个可变的无符号整形指针, 然后取地址值来赋值,从而改变寄存器的值
+
+```c
+#define RCC_AHB1ENR 	(*(volatile unsigned int *)(0x40023800 + 0x30))
+
+#define GPIO_F_BASE_ADDR 0x40021400
+#define GPIO_E_BASE_ADDR 0x40021000
+
+#define GPIOF_MODER 	(*(volatile unsigned int *)(GPIO_F_BASE_ADDR + 0x00))
+#define GPIOF_OTYPER 	(*(volatile unsigned int *)(GPIO_F_BASE_ADDR + 0x04))
+#define GPIOF_OSPEEDR 	(*(volatile unsigned int *)(GPIO_F_BASE_ADDR + 0x08))
+#define GPIOF_PUPDR 	(*(volatile unsigned int *)(GPIO_F_BASE_ADDR + 0x0C))
+#define GPIOF_ODR 		(*(volatile unsigned int *)(GPIO_F_BASE_ADDR + 0x14))
+
+#define GPIOE_MODER 	(*(volatile unsigned int *)(GPIO_E_BASE_ADDR + 0x00))
+#define GPIOE_OTYPER 	(*(volatile unsigned int *)(GPIO_E_BASE_ADDR + 0x04))
+#define GPIOE_OSPEEDR 	(*(volatile unsigned int *)(GPIO_E_BASE_ADDR + 0x08))
+#define GPIOE_PUPDR 	(*(volatile unsigned int *)(GPIO_E_BASE_ADDR + 0x0C))
+#define GPIOE_ODR 		(*(volatile unsigned int *)(GPIO_E_BASE_ADDR + 0x14))
+
+
+void LED_GPIO_Register_Config(void)
+{
+	// 使能GPIOF的端口时钟
+	RCC_AHB1ENR |= (1<<5)|(1<<4);
+	
+	// 配置PF9和PF10的引脚输出模式
+	GPIOF_MODER &= ~((1<<19) |(1<<21));
+	GPIOF_MODER |= (1<<18) | (1<<20);
+	
+	// 配置PE13和PE14的引脚输出模式
+	GPIOE_MODER &= ~((1<<27) |(1<<29));
+	GPIOE_MODER |= (1<<26) | (1<<28);
+	
+	// 推挽输出
+	GPIOF_PUPDR &= ~((1<<9)|(1<<10));
+	GPIOE_PUPDR &= ~((1<<13)|(1<<14));
+	
+	// 高速输出
+	GPIOF_OSPEEDR |= (1<<19)| (1<<21);
+	GPIOF_OSPEEDR |= (1<<18)| (1<<20);
+	GPIOE_OSPEEDR |= (1<<27)| (1<<29);
+	GPIOE_OSPEEDR |= (1<<26)| (1<<28);
+	
+	// 浮空输入
+	GPIOF_PUPDR &= ~((1<<19) |(1<<21));
+	GPIOF_PUPDR &= ~((1<<19) |(1<<21));
+	GPIOE_PUPDR &= ~((1<<27)| (1<<29));
+	GPIOE_PUPDR &= ~((1<<26)| (1<<28));
+	
+    // 设置默认低电平
+	GPIOF_ODR &= ~((1<<9)|(1<<10));
+	GPIOE_ODR &= ~((1<<13)|(1<<14));
+}
+```
 
 
 
@@ -490,4 +731,12 @@ int main(void)
 	}
 }
 ```
+
+
+
+
+
+
+
+
 

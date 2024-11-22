@@ -4149,3 +4149,122 @@ ICFilter:对应TIMx_CCMR1寄存器中的ICF[3:0]
 
 ![image-20241121211203850](img/image-20241121211203850.png)
 
+![image-20241122191006421](img/image-20241122191006421.png)
+
+![image-20241122191410073](img/image-20241122191410073.png)
+
+```c
+#include "./BSP/TIMER/gtim.h"
+#include "./BSP/LED/led.h"
+
+/*********************************通用定时器脉冲计数实验程序*************************************/
+
+TIM_HandleTypeDef g_timx_cnt_chy_handle;        /* 定时器x句柄 */
+
+/* 记录定时器计数器的溢出次数, 方便计算总脉冲个数 */
+uint32_t g_timxchy_cnt_ofcnt = 0 ;              /* 计数溢出次数 */
+
+/**
+ * @brief       通用定时器TIMX 通道Y 脉冲计数 初始化函数
+ * @note
+ *              本函数选择通用定时器的时钟选择: 外部时钟源模式1(SMS[2:0] = 111)
+ *              这样CNT的计数时钟源就来自 TIMX_CH1/CH2, 可以实现外部脉冲计数(脉冲接入CH1/CH2)
+ *
+ *              时钟分频数 = psc, 一般设置为0, 表示每一个时钟都会计数一次, 以提高精度.
+ *              通过读取CNT和溢出次数, 经过简单计算, 可以得到当前的计数值, 从而实现脉冲计数
+ *
+ * @param       arr: 自动重装值 
+ * @retval      无
+ */
+void gtim_timx_cnt_chy_init(uint16_t psc)
+{
+	// 配置计数器计数模式
+	g_timx_cnt_chy_handle.Instance = TIM2;
+	g_timx_cnt_chy_handle.Init.Prescaler = psc;
+	g_timx_cnt_chy_handle.Init.CounterMode = TIM_COUNTERMODE_UP;
+	g_timx_cnt_chy_handle.Init.Period = 65535;
+	HAL_TIM_IC_Init(&g_timx_cnt_chy_handle);
+	// 使能输入捕获和开启计数器
+	HAL_TIM_IC_Start_IT(&g_timx_cnt_chy_handle, TIM_CHANNEL_1);
+	// 配置从模式选择器
+	TIM_SlaveConfigTypeDef slave_instructure = {0};
+	// 选择外部扩展1
+	slave_instructure.SlaveMode=TIM_SLAVEMODE_EXTERNAL1;
+	// 选择通道1的单边沿触发
+	slave_instructure.InputTrigger = TIM_TS_TI1FP1;
+	// 单边沿触发极性(上升还是下降)
+	slave_instructure.TriggerPolarity = TIM_TRIGGERPOLARITY_RISING;
+	// 滤波器不启动
+	slave_instructure.TriggerFilter = 0;
+	// 初始化从选择器
+	HAL_TIM_SlaveConfigSynchro(&g_timx_cnt_chy_handle, &slave_instructure);
+	
+
+	
+}
+
+// 配置需要用到的外设初始化
+void HAL_TIM_IC_MspInit(TIM_HandleTypeDef *g_timx_cnt_chy_handle)
+{
+	// 初始化GPIO功能
+	if(g_timx_cnt_chy_handle->Instance == TIM2)
+	{
+		// 使能GPIOA的时钟
+		__HAL_RCC_GPIOA_CLK_ENABLE();
+		// 使能定时器2的时钟
+		__HAL_RCC_TIM2_CLK_ENABLE();
+		GPIO_InitTypeDef gpio_instructure;
+		// 将PA0设置为推挽复用, PA0是key0的引脚,所以触发key0也就是让脉冲发送1次
+		gpio_instructure.Mode = GPIO_MODE_AF_PP;
+		gpio_instructure.Pin = GPIO_PIN_0;
+		gpio_instructure.Speed = GPIO_SPEED_FREQ_HIGH;
+		gpio_instructure.Pull = GPIO_PULLDOWN; // 默认下拉模式
+		HAL_GPIO_Init(GPIOA, &gpio_instructure);
+	}
+	
+}
+
+```
+
+1.   初始化计数器的配置,如Prescaler, Period
+2.   开始输入捕获使能和计数器使能
+3.   配置从模式选择器,选择定时器TIM2的通道1CH1作为从模式输入1。同时设置触发类型为单边沿触发和设置触发极性(上升沿触发还是下降沿触发)
+4.   初始化从模式选择器
+5.   在MspInit中将PA0设置为TIM2的复用模式
+
+
+
+>   [!NOTE]
+>
+>   1.   设置GPIO复用的时候要先使能GPIOA的时钟,不然设置会完全失效
+>   2.   设置复用功能前,也要先给对应的定时器使能,不然也会无法使用
+
+
+
+
+
+
+
+
+
+### 高级定时器
+
+高级定时器有两个,分别是TIM1和TIM8
+
+![image-20241122202741427](img/image-20241122202741427.png)
+
+
+
+相比与通用定时器,多了三个特征:
+
+1.   重复计数
+2.   死区时间带可编程的互补输出
+3.   短路输入
+
+
+
+#### 框图
+
+![image-20241122203414990](img/image-20241122203414990.png)
+
+第二部分: 带N的是互补输出
