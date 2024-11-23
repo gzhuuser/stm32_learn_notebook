@@ -203,6 +203,7 @@ NOR Flash的特定:
 -   Standard Peripheral Library手册:标准库文件夹下面, 可以查看各个函数是怎么使用的,需要什么参数
 -   STM32F4xxx参考手册(中文): 可以查看各个功能模块的寄存器的详细情况
 -   GEC-STM32F407原理图: 里面有各个功能的电路图设计
+-   每个外设的stm32f4xxx_ppp.c文件中的开头都会告诉你怎么快速的使用这个系统库函数
 
 
 
@@ -516,6 +517,97 @@ GPIOG->BSRRH = LED1_PIN | LED2_PIN;
 
 
 
+
+
+
+
+### 解析标准库中的封装函数
+
+GPIO_Init(GPIOE, &GPIO_InitStructure_LED);
+
+```c
+void GPIO_Init(GPIO_TypeDef* GPIOx, GPIO_InitTypeDef* GPIO_InitStruct)
+{
+  uint32_t pinpos = 0x00, pos = 0x00 , currentpin = 0x00;
+
+  /* Check the parameters */
+  assert_param(IS_GPIO_ALL_PERIPH(GPIOx));
+  assert_param(IS_GPIO_PIN(GPIO_InitStruct->GPIO_Pin));
+  assert_param(IS_GPIO_MODE(GPIO_InitStruct->GPIO_Mode));
+  assert_param(IS_GPIO_PUPD(GPIO_InitStruct->GPIO_PuPd));
+
+  /* ------------------------- Configure the port pins ---------------- */
+  /*-- GPIO Mode Configuration --*/
+  for (pinpos = 0x00; pinpos < 0x10; pinpos++)
+  {
+    pos = ((uint32_t)0x01) << pinpos;
+    /* Get the port pins position */
+    currentpin = (GPIO_InitStruct->GPIO_Pin) & pos;
+
+    if (currentpin == pos)
+    {
+      GPIOx->MODER  &= ~(GPIO_MODER_MODER0 << (pinpos * 2));
+      GPIOx->MODER |= (((uint32_t)GPIO_InitStruct->GPIO_Mode) << (pinpos * 2));
+
+      if ((GPIO_InitStruct->GPIO_Mode == GPIO_Mode_OUT) || (GPIO_InitStruct->GPIO_Mode == GPIO_Mode_AF))
+      {
+        /* Check Speed mode parameters */
+        assert_param(IS_GPIO_SPEED(GPIO_InitStruct->GPIO_Speed));
+
+        /* Speed mode configuration */
+        GPIOx->OSPEEDR &= ~(GPIO_OSPEEDER_OSPEEDR0 << (pinpos * 2));
+        GPIOx->OSPEEDR |= ((uint32_t)(GPIO_InitStruct->GPIO_Speed) << (pinpos * 2));
+
+        /* Check Output mode parameters */
+        assert_param(IS_GPIO_OTYPE(GPIO_InitStruct->GPIO_OType));
+
+        /* Output mode configuration*/
+        GPIOx->OTYPER  &= ~((GPIO_OTYPER_OT_0) << ((uint16_t)pinpos)) ;
+        GPIOx->OTYPER |= (uint16_t)(((uint16_t)GPIO_InitStruct->GPIO_OType) << ((uint16_t)pinpos));
+      }
+
+      /* Pull-up Pull down resistor configuration*/
+      GPIOx->PUPDR &= ~(GPIO_PUPDR_PUPDR0 << ((uint16_t)pinpos * 2));
+      GPIOx->PUPDR |= (((uint32_t)GPIO_InitStruct->GPIO_PuPd) << (pinpos * 2));
+    }
+  }
+}
+```
+
+GPIOE是一个基地址, 他计算方式是:
+
+#define PERIPH_BASE           ((uint32_t)0x40000000)
+
+#define AHB1PERIPH_BASE       (PERIPH_BASE + 0x00020000)
+
+#define GPIOE_BASE            (AHB1PERIPH_BASE + 0x1000)
+
+#define GPIOE               ((GPIO_TypeDef *) GPIOE_BASE)
+
+
+
+
+
+在这里用了GPIO_TypeDef , stm32是四字节对齐, 每个寄存器的地址刚好也是四个字节, 所以就可以直接通过结构体封装在一起, 而不用考虑结构体字节对齐带来的地址误差
+
+```c
+typedef struct
+{
+  __IO uint32_t MODER;    /*!< GPIO port mode register,         Address offset: 0x00      */
+  __IO uint32_t OTYPER;   /*!< GPIO port output type register,  Address offset: 0x04      */
+  __IO uint32_t OSPEEDR;  /*!< GPIO port output speed register, Address offset: 0x08      */
+  __IO uint32_t PUPDR;    /*!< GPIO port pull-up/pull-down register,  Address offset: 0x0C      */
+  __IO uint32_t IDR;      /*!< GPIO port input data register,   Address offset: 0x10      */
+  __IO uint32_t ODR;      /*!< GPIO port output data register,  Address offset: 0x14      */
+  __IO uint16_t BSRRL;    /*!< GPIO port bit set/reset low register,  Address offset: 0x18      */
+  __IO uint16_t BSRRH;    /*!< GPIO port bit set/reset high register, Address offset: 0x1A      */
+  __IO uint32_t LCKR;     /*!< GPIO port configuration lock register, Address offset: 0x1C      */
+  __IO uint32_t AFR[2];   /*!< GPIO alternate function registers,     Address offset: 0x20-0x24 */
+} GPIO_TypeDef;
+```
+
+
+
 ### 点亮四个LED灯
 
 分两种实现方式:
@@ -738,5 +830,116 @@ int main(void)
 
 
 
+### 蜂鸣器
 
+![image-20241123104535576](img/image-20241123104535576.png)
+
+蜂鸣器分两种:
+
+1.   有源蜂鸣器: 内部有振荡电路,通电就会响
+2.   无源蜂鸣器: 内部没有振荡器,通电后不会响, 必须人为通过一个驱动信号才能响
+
+
+
+
+
+
+
+####  三极管
+
+![image-20241123105221191](img/image-20241123105221191.png)
+
+b: 基极
+
+c: 集电极
+
+e: 发射极
+
+
+
+记住: 导电方向是给PN施加一个正向电压, 通过这个可以看电流方向来直到是PNP还是NPN
+
+
+
+三极管的作用:
+
+1.   放大电路
+2.   开关
+
+
+
+放大电路:
+
+任何放大的原则都是不能失真
+
+![image-20241123110522392](img/image-20241123110522392.png)
+
+三极管导通条件:
+
+1.   NPN型在基极施加高电平
+2.   PNP型在基极施加低电平
+
+
+
+#### 蜂鸣器电路图
+
+![image-20241123104734310](img/image-20241123104734310.png)
+
+这个三极管是一个NPN结, 下拉电阻让基极默认输出低电平,需要控制BEEP变成高电平才能让三极管导通
+
+![image-20241123104845031](img/image-20241123104845031.png)
+
+对应PF8口
+
+
+
+#### 蜂鸣器代码
+
+```c
+#include "./BUZZER/buzzer.h"
+
+void Init_Buzzer()
+{
+	RCC->AHB1ENR |= (1<<5);
+	
+	GPIOF->MODER &= ~(1<<17);
+	GPIOF->MODER |= (1<<16);
+	
+	GPIOF->OTYPER &= ~(1<<8);
+	GPIOF->OSPEEDR |= (1<<16)|(1<<17);
+	GPIOF->PUPDR &= ~((1<<16)|(1<<17));
+	GPIOF->ODR &= ~(1<<8);
+}
+
+```
+
+main
+
+```c
+int main(void)
+{
+	// LED_GPIO_Config();
+	Key_Config();
+	Init_Buzzer();
+
+	while (1)
+	{
+		// 点亮LED0（设置为低电平）
+        if (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_0) == 0) // 按键按下，PA0 为低电平
+        {
+            for (uint32_t i = 0; i < 0x0000FF; i++); // 简单消抖
+            if (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_0) == 0) // 再次确认按键仍然按下
+            {
+                GPIO_ToggleBits(GPIOF, GPIO_Pin_8); // 翻转 LED 状态
+                while (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_0) == 0); // 等待按键释放
+            }
+        }
+        
+       
+		
+
+	}
+}
+  
+```
 
