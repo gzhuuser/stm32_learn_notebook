@@ -6,6 +6,23 @@
 
 
 
+## 硬件部分
+
+### 如何保养电烙铁
+
+1.  可以用高温海绵加水来清洗
+2.  用纸巾叠多层,用来擦
+3.  到100多°用剪刀刮一下
+4.  用砂纸磨一下
+
+### 怎么用
+
+![image-20241126195415308](img/image-20241126195415308.png)
+
+可以通过助焊剂让锡受热均匀,这样就会好看点
+
+
+
 ## 软件下载
 
 下载思路:
@@ -110,8 +127,8 @@ stm32的是修正哈佛结构,修正哈佛结构和哈佛结构的区别是:
 | ------------------------------------------------------------ | ---------- |
 | Libraries\STM32F4xx_StdPeriph_Driver\inc 库头文件夹Libraries\STM32F4xx_StdPeriph_Driver\src 库源文件夹 | DEVICE_LIB |
 | Project\STM32F4xx_StdPeriph_Templates\main.cProject\STM32F4xx_StdPeriph_Templates\stm32f4xx_it.h 中断函数头文件Project\STM32F4xx_StdPeriph_Templates\stm32f4xx_conf.h 配置文件Project\STM32F4xx_StdPeriph_Templates\stm32f4xx_it.c 中断函数文件 | USER       |
-| Libraries\CMSIS\Device\ST\STM32F4xx\Include\stm32f4xx.hLibraries\CMSIS\Device\ST\STM32F4xx\Source\Templates\ system_stm32f4xx.cLibraries\CMSIS\Device\ST\STM32F4xx\Include\system_stm32f4xx.h | SYSTEM     |
-| Libraries\CMSIS\Include\core_cm4_simd.hLibraries\CMSIS\Include\core_cm4.h Cortex-M4系统文件Libraries\CMSIS\Include\core_cmFunc.hLibraries\CMSIS\Include\core_cmInstr.hLibraries\CMSIS\Device\ST\STM32F4xx\Source\Templates\arm\startup_stm32f40_41xxx.s | CMSIS      |
+| Libraries\CMSIS\Device\ST\STM32F4xx\Include\stm32f4xx.h Libraries\CMSIS\Device\ST\STM32F4xx\Source\Templates\ system_stm32f4xx.c Libraries\CMSIS\Device\ST\STM32F4xx\Include\system_stm32f4xx.h | SYSTEM     |
+| Libraries\CMSIS\Include\core_cm4_simd.h Libraries\CMSIS\Include\core_cm4.h  Cortex-M4系统文件Libraries\CMSIS\Include\core_cmFunc.h Libraries\CMSIS\Include\core_cmInstr.h Libraries\CMSIS\Device\ST\STM32F4xx\Source\Templates\arm\startup_stm32f40_41xxx.s | CMSIS      |
 
 
 
@@ -243,6 +260,208 @@ STM32F4xxx参考手册(中文): 2.存储器的总线架构中的2.3 存储器的
 
 
 ## 时钟源体系
+
+**参考文献: Cortex M3和M4的区别, 9.5 The SysTick timer**
+
+
+
+时钟源有三种:
+
+1.   HSI振荡器
+2.   HSE振荡器
+3.   主PLL时钟
+
+![image-20241127142629818](img/image-20241127142629818.png)
+
+
+
+### 时钟体系的框图
+
+对于外设的来说,走的是HSE, 经过PLL来倍频, 之后通过sw选择器后再分频给不同的外设
+
+![image-20241127153149005](img/image-20241127153149005.png)
+
+M, N, P的值是: 以25Mhz为例,因为stm官方用的是25Mhz的
+
+![image-20241127153422364](img/image-20241127153422364.png)
+
+去到stm32f4xx.h可以找到HSE_VALUE来修改
+
+对于M, P, Q可以去system_stm32f4xx.c中的PLL_X 来修改
+
+![image-20241127153950300](img/image-20241127153950300.png)
+
+记得要改一下这个PLL_M,改成上面的公式
+
+
+
+### 时间源介绍
+
+
+
+#### 高速外部时钟HSE
+
+外部高速时钟采用的是石英晶振, 这种晶振具体有机电效应, 当按一定的角度切割这个晶振时, 利用石英晶振的机械振动达到生成周期的时钟信号, 另外石英损耗小, 且振荡频率高度稳定。
+
+
+
+优点:
+
+-   频率稳定性极高，受温度、电压等外部因素影响较小
+-   频率精度高，可以达到百万分之一的水平
+-   品质因数Q值高，能量损耗小
+-   体积小，成本低
+
+
+
+晶振电路:
+
+`需要记忆`
+
+![image-20241127143050083](img/image-20241127143050083.png)
+
+![image-20241127142901974](img/image-20241127142901974.png)
+
+
+
+![image-20241127142850262](img/image-20241127142850262.png)
+
+
+
+
+
+![image-20241127143250366](img/image-20241127143250366.png)
+
+
+
+
+
+#### HSI时钟
+
+高速内部时钟, 在MCU里面自带, 不需要花钱额外拓展, 频率是16MHz, 由RC振荡器生成, 启动速度比HSE快,但是精度没有HSE高
+
+![image-20241127144142955](img/image-20241127144142955.png)
+
+使用场景:
+
+1.   直接作为系统时钟
+2.   用于低功耗模式
+
+
+
+#### 低速外部时钟LSE
+
+![image-20241127144614142](img/image-20241127144614142.png)
+
+一般给实时时钟外设使用, 即RTC, 用来做计时的, 我们电脑上的时钟显示也是通过这个LSE来生成的
+
+
+
+
+
+#### 低速内部时钟LSI
+
+![image-20241127144713116](img/image-20241127144713116.png)
+
+精度低,成本低,用在低功耗待机模式
+
+
+
+
+
+
+
+#### 倍频锁相环PLL
+
+![image-20241127145216044](img/image-20241127145216044.png)
+
+-   倍频: 把频率放大
+-   分频: 把频率降低
+
+
+
+
+
+
+
+### 延时功能
+
+我们直接通过for循环来进行的计时, 但是这种情况需要配合逻辑示波器来确定精度。所以我们需要使用系统滴答定时器来确定这个准确值
+
+#### 系统滴答定时器
+
+![image-20241127142116915](img/image-20241127142116915.png)
+
+如上面所说, 滴答计数器可以周期性产生中断
+
+滴答计数器的时钟源有两种:
+
+1.   来自处理器的时钟频率
+2.   来自一个参考的时钟频率
+
+![image-20241127163413405](img/image-20241127163413405.png)
+
+
+
+系统滴答计数器包含四个寄存器
+
+![image-20241127162251729](img/image-20241127162251729.png)
+
+1.   系统滴答计数器控制状态寄存器
+2.   系统滴答计数器重载状态寄存器
+3.   系统滴答计数器当前值的寄存器
+4.   系统滴答计数器验证寄存器
+
+![image-20241127164254954](img/image-20241127164254954.png)
+
+去到core_cm4.h中找到这个结构体
+
+![image-20241127163038019](img/image-20241127163038019.png)
+
+```c
+typedef struct
+{
+  __IO uint32_t CTRL;                    /*!< Offset: 0x000 (R/W)  SysTick Control and Status Register */
+  __IO uint32_t LOAD;                    /*!< Offset: 0x004 (R/W)  SysTick Reload Value Register       */
+  __IO uint32_t VAL;                     /*!< Offset: 0x008 (R/W)  SysTick Current Value Register      */
+  __I  uint32_t CALIB;                   /*!< Offset: 0x00C (R/ )  SysTick Calibration Register        */
+} SysTick_Type;
+```
+
+
+
+步骤:
+
+1.   关闭状态寄存器
+2.   清空当前数值寄存器
+3.   设置重装载寄存器
+4.   打开状态寄存器
+
+![image-20241127165142257](img/image-20241127165142257.png)
+
+四个对应的寄存器的内部结构:
+
+![image-20241127170556623](img/image-20241127170556623.png)
+
+![image-20241127170603935](img/image-20241127170603935.png)
+
+
+
+
+
+
+
+![image-20241127165747356](img/image-20241127165747356.png)
+
+![image-20241127165758971](img/image-20241127165758971.png)
+
+![image-20241127170006201](img/image-20241127170006201.png)
+
+这里的while表示,当SysTick->CTRL的第16位为0的时候,表示时间已经到了, 然后关闭这个定时器,重新装填后在开启, 这样就可以实现精准的延时
+
+
+
+
 
 
 
@@ -942,4 +1161,351 @@ int main(void)
 }
   
 ```
+
+
+
+
+
+## 中断
+
+前后台结构:
+
+中断被称为前台, 主程序中的whlie被称为后台。中断会终止后台程序的运行,跳转到中断处理函数进行处理, 处理完后才会继续执后台程序
+
+
+
+示意图如下:
+
+![image-20241126142004487](img/image-20241126142004487.png)
+
+最多有255个中断请求, 240个外部的中断请求, 15个系统中断。实际上被使用的中断请求远远小于255个
+
+### NVIC
+
+**NVIC**: Nested vectored interrupt controller  嵌套向量中断控制器, 所有中断都是通过NVIC来管理的
+
+中断要做的设置:
+
+1.   设置优先级(可选)
+2.   使能外设的中断生成控制
+3.   配置NVIC中关于这个中断的参数
+
+
+
+>   [!NOTE]
+>
+>   在中断服务程序结束之前,必须要清空中断触发标志,不然系统会一直循环处理这个中断函数
+>
+>   所有的中断服务程序都可以从启动文件中的向量表找到
+>
+>   这些向量表中的终端服务名字都是由芯片厂商提供的, 我们编写的终端服务函数名称必须匹配中断向量表的名称一致,这样系统的连接器才能跳转到ISR程序的开始地址
+
+
+
+我们可以在misc.h头文件中找到这个中断初始化句柄结构体, misc是Miscellaneous的缩写,表示杂项或者其他的意思, 通常用于存放一些不易于归类的工具函数或者硬件配置
+
+![image-20241126145305130](img/image-20241126145305130.png)
+
+抢占优先级和响应优先级的作用:
+
+![image-20241126152133006](img/image-20241126152133006.png)
+
+
+
+有四个bit来设置这个NVIC优先级分组,抢占优先级和响应优先级公用这四个bit,共有5个分组, 如下:
+
+![image-20241126152531874](img/image-20241126152531874.png)
+
+通过函数`NVIC_PriorityGroupConfig()`来配置, 只有一个参数, 就是选择优先级分组
+
+![image-20241126152852358](img/image-20241126152852358.png)
+
+只有五个选择
+
+
+
+**这个函数在入口处调用, 且尽量不要再改**
+
+
+
+### EXTI
+
+外部中断事件控制器, 外部中断/事件控制器包含多达23个用于产生事件/中断请求的边沿检测器, 每根输入线都可以单独进行配置, 以选择类型和相应的触发事件,  每根输入线还可以单独屏蔽, 挂起寄存器用于保持中断请求的状态线
+
+
+
+整个过程由四个寄存器联动完成:
+
+1.   上升或下降沿边缘检测器
+2.   中断屏蔽寄存器 interrupt mask register
+3.   挂起请求寄存器
+4.   SYSCFG_EXITCR1寄存器
+
+![image-20241126161840707](img/image-20241126161840707.png)
+
+用户按一下key, 先高后低最后又高, 可以检测上升沿来判定按键触发事件,触发事件后,挂起请求寄存器位为1, 去到
+
+![image-20241126160329690](img/image-20241126160329690.png)
+
+
+
+MCU内部的所有IO口都只和EXTI0-EXTI15这16个边沿检测器有关, 举个例子,比如按下按钮PB4, 那么会触发的中断就是EXIT4这个事件
+
+![image-20241126161548441](img/image-20241126161548441.png)
+
+IO端口的引脚编号和EXIT外设的内部编号是对应的
+
+
+
+
+
+
+
+#### 设置边缘检测器寄存器
+
+上升沿寄存器
+
+![image-20241126154528231](img/image-20241126154528231.png)
+
+下降沿触发
+
+![image-20241126154541988](img/image-20241126154541988.png)
+
+
+
+一共23个位被使用了, 对应23条EXTI线
+
+
+
+#### 中断/事件掩码寄存器
+
+![image-20241126165807070](img/image-20241126165807070.png)
+
+
+
+![image-20241126165820338](img/image-20241126165820338.png)
+
+
+
+#### 挂起寄存器
+
+![image-20241126170652143](img/image-20241126170652143.png)
+
+
+
+#### SYSCFG_EXTICRx
+
+![image-20241126170930079](img/image-20241126170930079.png)
+
+![image-20241126170941660](img/image-20241126170941660.png)
+
+
+
+### 中断处理程序ISR
+
+对于一个EXTI线对应一个ISR处理函数, 这个时候可以不写EXTI_GetITStatus(), 因为一进来就几乎可以确定是这条线触发的中断, 如果一个ISR处理函数对应多条线,如EXTI9_5_IRQHandler, 这个时候就需要使用EXTI_GetITStatus()来判断是由那一条线来触发
+
+
+
+
+
+### 向量表
+
+向量表本质上是一个指针数组, 这个数组用来记录外部异常处理函数的入口指针, 下标从0开始,每个指针4个字节
+
+![image-20241127104008496](img/image-20241127104008496.png)
+
+一旦异常发送, MCU中断NVIC就知道了异常发生编号,也就是数组的下标, NVIC就会告诉CPU, 让它去根据这个编号来去到中断向量表中找到对应的元素, 进行读取, 读取后根据map映射文件,找到这个指针指向的ISR地址, 这个地址就是真正意义上的ISR的地址, 这个时候就会把这个ISR地址放入PC, 进行跳转。
+
+![image-20241127110204427](img/image-20241127110204427.png)
+
+
+
+### 代码
+
+>   ​								 How to use this driver 
+>
+>    ===============================================================================
+>
+>   In order to use an I/O pin as an external interrupt source, follow steps 
+>         below:
+>      (#) Configure the I/O in input mode using GPIO_Init()
+>      (#) Select the input source pin for the EXTI line using SYSCFG_EXTILineConfig()
+>      (#) Select the mode(interrupt, event) and configure the trigger 
+>          selection (Rising, falling or both) using EXTI_Init()
+>      (#) Configure NVIC IRQ channel mapped to the EXTI line using NVIC_Init()
+>
+>    [..]     
+>      (@) SYSCFG APB clock must be enabled to get write access to SYSCFG_EXTICRx
+>          registers using RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG, ENABLE);
+
+  ![image-20241126193625479](img/image-20241126193625479.png)
+
+
+
+初始化步骤:
+
+1.   设置GPIO输入模式
+2.   配置EXIT线, 需要哪条配置那条, 可以根据GPIO端口的引脚来配置
+3.   配置NVIC, 绑定ISR服务函数
+4.   初始化EXTI和NVIC
+5.   编写中断处理函数
+
+
+
+```c
+#include "./NVIC/nvic.h"
+
+void KEY_Config(void)
+{
+	GPIO_InitTypeDef gpio_instructurn;
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE|RCC_AHB1Periph_GPIOA, ENABLE);
+	// 初始化PA0 和 PB2-4
+	gpio_instructurn.GPIO_Pin = GPIO_Pin_0;
+	gpio_instructurn.GPIO_Mode = GPIO_Mode_IN;
+	gpio_instructurn.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	GPIO_Init(GPIOA, &gpio_instructurn);
+	gpio_instructurn.GPIO_Pin = GPIO_Pin_2|GPIO_Pin_3|GPIO_Pin_4;
+	GPIO_Init(GPIOE, &gpio_instructurn);
+}
+
+void NVIC_Config(void)
+{
+	EXTI_InitTypeDef   EXTI_InitStructure;
+	NVIC_InitTypeDef   NVIC_InitStructure;
+	
+	KEY_Config();
+	/* Enable SYSCFG clock */
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG, ENABLE);
+
+
+	/* Connect EXTI Line to port's pin */
+	SYSCFG_EXTILineConfig(EXTI_PortSourceGPIOA, EXTI_PinSource0);
+	SYSCFG_EXTILineConfig(EXTI_PortSourceGPIOE, EXTI_PinSource2);
+	SYSCFG_EXTILineConfig(EXTI_PortSourceGPIOE, EXTI_PinSource3);
+	SYSCFG_EXTILineConfig(EXTI_PortSourceGPIOE, EXTI_PinSource4);
+
+	/* Configure EXTI Line0 */
+	EXTI_InitStructure.EXTI_Line = EXTI_Line0;
+	EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
+	EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;  
+	EXTI_InitStructure.EXTI_LineCmd = ENABLE;
+	EXTI_Init(&EXTI_InitStructure);
+	
+	EXTI_InitStructure.EXTI_Line = EXTI_Line2;
+	EXTI_Init(&EXTI_InitStructure);
+	
+	EXTI_InitStructure.EXTI_Line = EXTI_Line3;
+	EXTI_Init(&EXTI_InitStructure);
+	
+	EXTI_InitStructure.EXTI_Line = EXTI_Line4;
+	EXTI_Init(&EXTI_InitStructure);
+
+	/* Enable and set EXTI Line0 Interrupt to the lowest priority */
+	NVIC_InitStructure.NVIC_IRQChannel = EXTI0_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 16;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+	
+	NVIC_InitStructure.NVIC_IRQChannel = EXTI2_IRQn;
+	NVIC_Init(&NVIC_InitStructure);
+	NVIC_InitStructure.NVIC_IRQChannel = EXTI3_IRQn;
+	NVIC_Init(&NVIC_InitStructure);
+	NVIC_InitStructure.NVIC_IRQChannel = EXTI4_IRQn;
+	NVIC_Init(&NVIC_InitStructure);
+}
+
+
+void EXTI0_IRQHandler(void)
+{
+	GPIO_ToggleBits(GPIOF, GPIO_Pin_9);
+	EXTI_ClearITPendingBit(EXTI_Line0);
+}
+
+void EXTI2_IRQHandler(void)
+{
+	GPIO_ToggleBits(GPIOF, GPIO_Pin_10);
+	EXTI_ClearITPendingBit(EXTI_Line2);
+}
+
+void EXTI3_IRQHandler(void)
+{
+	GPIO_ToggleBits(GPIOE, GPIO_Pin_13);
+	EXTI_ClearITPendingBit(EXTI_Line3);
+}
+
+void EXTI4_IRQHandler(void)
+{
+	GPIO_ToggleBits(GPIOE, GPIO_Pin_14);
+	EXTI_ClearITPendingBit(EXTI_Line4);
+}
+```
+
+
+
+对应的main:
+
+```c
+/**
+  ******************************************************************************
+  * @file    main.c 
+  * @author  苏向标
+  * @version V1.0.0
+  * @date    2024/11/20
+  * @brief   程序主函数
+  ******************************************************************************
+  * 通过调用中断来控制LED的亮灭
+  * None
+  ******************************************************************************
+  */
+
+/* Includes ----------------定义头文件---------------------------------------*/
+
+#include "stm32f4xx.h"
+#include "LED.h"
+#include "./KEY/key.h"
+#include "./NVIC/nvic.h"
+
+/** @addtogroup Template_Project
+  * @{
+  */ 
+
+
+void delay_8ms(void)
+{
+	int i = 13437;
+	while(i--);
+}
+
+int main(void)
+{
+	// 设置分组4, 抢占优先级是0-15, 响应优先级是0
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
+	NVIC_Config();
+	LED_GPIO_Config();
+	
+	while (1)
+	{	
+
+	}
+}
+  
+
+```
+
+
+
+### 注意点
+
+1.   如果要用异常, 必须要在汇编文件外定义ISR程序, 并且ISR函数名称必须和启动文件的向量表中的异常名称必须一致,如果不一致会导致你的程序死循环。这是由于汇编的问题: 因为在汇编文件中的所有ISR函数都是弱定义,如果不重写, 就会触发汇编的默认操作,进入死循环, 所有一定要按ISR的函数名字重写 
+
+
+
+
+
+
+
+
+
+
 
