@@ -1509,3 +1509,793 @@ int main(void)
 
 
 
+## 定时器
+
+STM32F407共有14个定时器, 2个基本定时器, 10个通用定时器, 2个高级定时器
+
+
+
+定时器是属于外设,时钟由APB提供,但定时器是一种特殊外设, 时钟会独立一个通道提供给他们。
+
+已知:
+
+1.   APB1的时钟频率是42MHz
+2.   APB2的时钟频率是84MHz
+
+
+
+![image-20241128102353343](img/image-20241128102353343.png)
+
+
+
+
+
+
+
+### 基本定时器
+
+![image-20241128095727637](img/image-20241128095727637.png)
+
+特征:
+
+1.   16位自动重载计数器, 最高能数65536
+2.   只有递增计数模式,且可以通过分频来改变计时周期
+3.   用于触发DAC的同步电路
+4.   发送计数器上溢更新事件时会生成中断/DMA请求:
+
+
+
+
+
+stm32f407zet6中只有TIM6和TIM7属于基本定时器,经过查表,发现TIM6和TIM7是挂载在APB1总线下面的, 所以定时器的时钟频率是84MHz
+
+![image-20241128102550993](img/image-20241128102550993.png)
+
+1.   预分频器是16位的, 可以将84MHz的频率降低, 最高降低65536倍
+2.   自动重载寄存器可以设置计数的次数,也就是上溢的上限
+3.   计数器寄存器有加减的能力, 基本定时器只能加, 从0开始加到65535
+
+
+
+计算公式:
+$$
+time = \frac{(psc+1)(arr+1)}{TIMxCLK}
+$$
+
+
+
+
+例子
+
+```c
+void delay_Tim_us(uint32_t nus)
+{
+	NVIC_InitTypeDef NVIC_InitStructure;
+	/* TIM3 clock enable */
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM6, ENABLE);
+
+	/* Enable the TIM3 gloabal Interrupt */
+	NVIC_InitStructure.NVIC_IRQChannel = TIM6_DAC_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+
+	TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
+	  /* Time base configuration */
+	// 定时100ms
+	TIM_TimeBaseStructure.TIM_Period = nus-1;
+	TIM_TimeBaseStructure.TIM_Prescaler = 84-1;
+	TIM_TimeBaseStructure.TIM_ClockDivision = 0;
+	TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+
+	TIM_TimeBaseInit(TIM6, &TIM_TimeBaseStructure);
+	// 选择中断源, 基本定时器只能上溢更新事件
+	TIM_ITConfig(TIM6, TIM_IT_Update, ENABLE);
+	
+	// 使能定时器6
+	TIM_Cmd(TIM6, ENABLE);
+}
+
+///**
+//  ******************************************************************************
+//  * @brief    中断服务函数
+//  * @param    
+//  * @retval    void
+//  * @note   
+//*/
+
+void TIM6_DAC_IRQHandler(void)
+{
+	if (TIM_GetITStatus(TIM6, TIM_IT_Update) != RESET)
+	{
+		TIM_ClearITPendingBit(TIM6, TIM_IT_Update);
+		// 电平翻转
+		GPIO_ToggleBits(GPIOB, GPIO_Pin_7);
+	}
+}
+```
+
+
+
+### 通用定时器
+
+框图:
+
+![image-20241128150708129](img/image-20241128150708129.png)
+
+
+
+#### TIM2到TIM5
+
+![image-20241128150617156](img/image-20241128150617156.png)
+
+
+
+特征:
+
+1.   多达4个独立通道,每个可以用于: 输入捕获,输出比较, PWM生成, 单脉冲模式输出
+2.   使用外部信号控制定时器可以实现多个定时器互联的同步电路
+3.   发生如下事件时,可以产生中断或者DMA请求:
+     1.   更新: 上下溢
+     2.   触发事件: 计数器启动, 停止, 初始化或者内部外部触发计数
+     3.   输入捕获
+     4.   输出比较
+
+
+
+
+
+#### TIM9到TIM14
+
+![image-20241128154728299](img/image-20241128154728299.png)
+
+特征:
+
+1.   **2个**独立通道,每个可以用于: 输入捕获,输出比较, PWM生成, 单脉冲模式输出
+2.   使用外部信号控制定时器可以实现多个定时器互联的同步电路
+3.   发生如下事件时,可以产生中断或者DMA请求:
+     1.   更新: 上下溢
+     2.   触发事件: 计数器启动, 停止, 初始化或者内部外部触发计数
+     3.   输入捕获
+     4.   输出比较
+
+
+
+
+
+
+
+### 定时器输出部分
+
+![image-20241128154849124](img/image-20241128154849124.png)
+
+上面的定时器部分功能和基本定时器一样,只是多了几个输入源
+
+这里的比较寄存器的特征是: 当CNT的值小于设定的值(计数模式为增量计算), 默认输出低电平/高电平, 超过就会自动翻转, 通过这个特征可以输出一定占空比的脉冲信号
+
+
+
+### PWM脉冲调制
+
+![image-20241128162551900](img/image-20241128162551900.png)
+
+PWM输出有两种模式, 区别如下:
+
+![image-20241128162609377](img/image-20241128162609377.png)
+
+
+
+假设选择的定时器是在APB1下, 定时器时钟频率是84MHz, 想要生成的脉冲信号的50Hz, 脉冲信号是20ms, 预分频值设置为8400, 所以自动重载寄存器的重载值是200, 并且选择高电平有效
+
+
+
+1.  使用PWM控制舵机, 舵机连接的是MCU的PC7管脚, 对应TIM3_CH2
+2.  舵机需要20ms的脉冲信号, 并且脉冲信息的高电平0.5ms, 2.5ms可以控制0~180°
+3.  0.5ms*n -> (n-1)\*45°
+
+![image-20241128194548257](img/image-20241128194548257.png)
+
+![image-20241128194559894](img/image-20241128194559894.png)
+
+
+
+代码
+
+```c
+#include "./SG/SG.h"
+
+
+uint16_t PrescalerValue = 0;
+
+//GPIO引脚PC7, 将PC7的引脚复用改成TIM3_CH2(查表)
+void SG90_Config(void)
+{
+  GPIO_InitTypeDef GPIO_InitStructure;
+
+  /* TIM3 clock enable */
+  RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
+
+  /* GPIOC clock enable */
+  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);
+  
+  /* GPIOC Configuration: TIM3 CH2 (PC7)*/
+  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_7;
+  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
+  GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP ;
+  GPIO_Init(GPIOC, &GPIO_InitStructure); 
+
+  /* Connect TIM3 pins to AF2 */  
+  GPIO_PinAFConfig(GPIOC, GPIO_PinSource7, GPIO_AF_TIM3); 
+
+}
+
+
+void TIM3_CH2_Config()
+{
+	TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
+	TIM_OCInitTypeDef  TIM_OCInitStructure;
+	// 配置20ms的脉冲配置
+	TIM_TimeBaseStructure.TIM_Period = 2000-1;
+	TIM_TimeBaseStructure.TIM_Prescaler = 840-1;
+	TIM_TimeBaseStructure.TIM_ClockDivision = 0;
+	TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+	TIM_TimeBaseInit(TIM3, &TIM_TimeBaseStructure);
+
+
+	// 配置PWM通道2
+	TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
+	TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
+	// 初始化0°
+	TIM_OCInitStructure.TIM_Pulse = 0;
+	// 高电平有效
+	TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;
+	TIM_OC2Init(TIM3, &TIM_OCInitStructure);
+	//使能预装载寄存器,用来比较的
+	TIM_OC2PreloadConfig(TIM3, TIM_OCPreload_Enable);
+
+
+
+
+	TIM_ARRPreloadConfig(TIM3, ENABLE);
+
+	/* TIM3 enable counter */
+	TIM_Cmd(TIM3, ENABLE);
+
+}
+```
+
+
+
+
+
+#### 小tis
+
+可以利用定时器准确的定时功能,来模拟pwm脉冲输出, 这样就可以实现哪怕我们要的引脚没有定时器复用功能,也可以产生类似于定时器PWM脉冲的机制
+
+![image-20241129113803389](img/image-20241129113803389.png)
+
+
+
+
+
+
+
+### 通用定时器的中断
+
+通用定时器的中断只需要配置NVIC对应的事件号, 然后无论是计时器上下溢, 输入/输出捕获事件, 比较寄存器更新事件等, 都共用一个中断处理函数, 只需要通过TIM_GetITStatus加以区分就行
+
+
+
+具体代码:
+
+```c
+// 1. 使能定时器比较中断
+void TIM_Config(void)
+{
+    // 假设已经完成了基本的 PWM 配置
+    
+    // 使能比较中断
+    TIM_ITConfig(TIMx, TIM_IT_CCx, ENABLE);  // x是通道号(1-4)
+    
+    // 配置 NVIC
+    NVIC_InitTypeDef NVIC_InitStructure;
+    NVIC_InitStructure.NVIC_IRQChannel = TIMx_IRQn;  // 定时器对应的中断通道
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+}
+
+// 2. 中断服务函数
+void TIMx_IRQHandler(void)
+{
+    if(TIM_GetITStatus(TIMx, TIM_IT_CCx) != RESET)
+    {
+        // 清除中断标志位
+        TIM_ClearITPendingBit(TIMx, TIM_IT_CCx);
+        
+        // 在这里添加你的中断处理代码
+    }
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## 通信
+
+在stm32中,所有的通信都是发生在物理层的, 数据都是以比特流的方式来进行传输的。
+
+
+
+TTL(晶体管-晶体管逻辑)电平协议：
+
+-   电平标准： • 高电平(逻辑1): +5V或+3.3V • 低电平(逻辑0): 0V • 阈值电平: 典型值约2.0V左右
+-   工作原理：采用单端信号传输,即信号线和地线
+-   传输距离：通常限制在几米以内
+-   优点： • 电路结构简单,成本低 • 与数字电路直接兼容 • 信号处理简单直观
+-   缺点： • 抗干扰能力弱 • 传输距离短 • 容易受到地电位差影响
+-   典型应用：设备内部短距离通信,如单片机与外设之间的通信
+
+RS-232电平协议：
+
+-   电平标准： • 逻辑1: -3V至-15V • 逻辑0: +3V至+15V • 典型值通常为±12V
+-   工作原理： • 使用负逻辑电平(高电平表示0,低电平表示1) • 采用单端不平衡传输
+-   传输距离：一般可达15米左右
+-   抗干扰性：通过较大电压摆幅提高抗干扰能力
+-   优点： • 比TTL具有更强的抗干扰能力 • 传输距离更远 • 广泛应用于计算机串行接口
+-   缺点： • 需要电平转换电路 • 功耗较大 • 传输速率受限
+-   典型应用：计算机与外设通信,工业控制设备通信
+
+![image-20241129142345862](img/image-20241129142345862.png)
+
+
+
+RS-485电平协议：
+
+-   电平标准： • 差分电压>+200mV表示逻辑1  • 差分电压<-200mV表示逻辑0
+-   工作原理： • 采用差分信号传输 • 使用双绞线传输差分信号 • A、B两线之间的电位差决定逻辑电平
+-   传输特性： • 最大传输距离可达1200米 • 最高传输速率可达10Mbps(取决于传输距离)
+-   优点： • 抗干扰能力极强 • 传输距离远 • 支持多点通信(最多32个节点) • 传输速率高
+-   缺点： • 需要专用收发器芯片 • 布线相对复杂 • 成本较高
+-   典型应用： • 工业自动化控制系统 • 楼宇自动化 • 智能交通系统 • 安防监控系统
+
+![image-20241129142429739](img/image-20241129142429739.png)
+
+抗干扰原理： 想象两根信号线紧密绞在一起（双绞线）。当外界电磁干扰来临时：
+
+1.  干扰会同时影响两根线
+2.  由于两线距离很近，它们受到的干扰几乎完全相同
+3.  虽然两根线的电压都发生了变化，但它们的电压差基本保持不变
+4.  接收端只看电压差，所以能有效过滤掉这些共模干扰
+
+![image-20241129144013457](img/image-20241129144013457.png)
+
+
+
+
+
+LSB: 低位先发, 一个字节,先发bit0, 就是发送最低位的那个字节
+
+MSB: 高位先发, 一个字节, 先发bit7, 就是发送最高位的那个字节
+
+例子:
+
+>   0x12 = 0001 0010 (二进制)
+>
+>   MSB优先发送（高位先发）：0 → 0 → 0 → 1 → 0 → 0 → 1 → 0
+>
+>   LSB优先发送（低位先发） ：0 → 1 → 0 → 0 → 1 → 0 → 0 → 0
+
+![image-20241129143114469](img/image-20241129143114469.png)
+
+
+
+
+
+
+
+### 串口通信
+
+![image-20241129143654916](img/image-20241129143654916.png)
+
+
+
+简化就是:
+
+![image-20241129143827876](img/image-20241129143827876.png)
+
+
+
+
+
+#### 同步通信:
+
+1.  边沿同步
+2.  电平同步
+
+
+
+边沿同步:
+
+![image-20241129145303265](img/image-20241129145303265.png)
+
+每触发规定的边沿下降, 就可以同时发送和接收一个位的数据
+
+
+
+电平同步:
+
+![image-20241129145438557](img/image-20241129145438557.png)
+
+规定高电平的时候可以发送数据, 8位的数据,需要8个脉冲才能发送出去, 反过来也是,同一时间只能有一方传输数据
+
+
+
+
+
+
+
+#### 异步通信:
+
+利用字符帧来告诉接收方什么时候开始接收, 什么时候结束接收
+
+![image-20241129150036531](img/image-20241129150036531.png)
+
+波特率: 单位时间内传输码元的数量, 单位是波特baud, 当码元是二进制的时候和比特率是一样的, 但是单位还是不一样
+
+比特率: 单位时间内传输2进制码元的数量, 单位是bit/s
+
+码元: 表示信息的携带量, 十六进制的码元就是16
+
+
+
+
+
+#### stm32f407开发板的uart通信原理
+
+![image-20241129163347483](img/image-20241129163347483.png)
+
+电脑通过usb串口将电平信号发送到stm32上面的ch340的芯片, 然后变成电平信号由ch340的rx和tx发送出去, 去到stm32的usart1中的TXD和RXD口, 通过短路帽连接, 这样就完成电脑和MCU的通信连接,之后设置好代码就可以通信xcom串口模拟通信了
+
+
+
+如果想要usart和外设传感器通信的话,就将短路帽接入35和24, 这样就会打通和外设的通信电路
+
+
+
+代码:
+
+通过xcom发送指令控制LED灯开关和舵机转动
+
+![image-20241129211953181](img/image-20241129211953181.png)
+
+
+
+```c
+#include "stm32f4xx.h"
+#include "LED.h"
+#include "Delay.h" 
+#include "./TIM/tim.h"
+#include "./USART/uart.h"
+#include "./SG/SG.h"
+
+
+/** @addtogroup Template_Project
+  * @{
+  */ 
+
+/* Private typedef --------------------------定义类型----------------------------*/
+/* Private define ---------------------------定义声明----------------------------*/
+/* Private macro ----------------------------宏定义------------------------------*/
+/* Private variables ------------------------定义变量----------------------------*/
+/* Private function prototypes --------------函数声明----------------------------*/
+/* Private functions ------------------------定义函数----------------------------*/
+
+/**
+  * @brief  Main program
+  * @param  None
+  * @retval None
+  */
+
+ 
+void delay_ms_(uint32_t nms)
+{
+	
+	SysTick->CTRL = 0; 				 // 关闭定时器
+	SysTick->LOAD = 21*1000 - 1 ;	 // 设置重载值
+	SysTick->VAL  = 0; 				 // 清除当前值
+	SysTick->CTRL = 1; 				 // 开启定时器，并且使用外部时钟 21MHZ 
+	while ((SysTick->CTRL & 0x00010000)==0);// 等待计数完成
+	SysTick->CTRL = 0; 			     // 关闭定时器		
+}
+
+
+int main(void)
+{
+	uint32_t current_duty=2;
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
+	LED_GPIO_Config();
+	SG90_Config();
+	TIM3_CH2_Config();
+	UART_Config(115200);
+	TIM_SetCompare2(TIM3, 2); 
+    for (;;)
+	{   
+		switch(Flag)
+		{
+			case 1: 
+				GPIO_ResetBits(GPIOF, GPIO_Pin_9);
+				Flag=0; 
+				break;
+			
+			case 2: 
+				GPIO_SetBits(GPIOF, GPIO_Pin_9);
+				Flag=0; 
+				break;
+			
+			case 3: 
+				current_duty = current_duty >= 250 ? 250 : current_duty + 50;
+				TIM_SetCompare2(TIM3, current_duty); 
+				Flag=0;  
+				break;
+			
+			case 4: 
+				current_duty = current_duty <= 50 ? 50 : current_duty - 50;
+				TIM_SetCompare2(TIM3, current_duty);
+				Flag=0;
+				break;
+		}
+
+    }
+}
+  
+```
+
+
+
+舵机代码
+
+```c
+#include "./SG/SG.h"
+
+
+uint16_t PrescalerValue = 0;
+
+
+void SG90_Config(void)
+{
+  GPIO_InitTypeDef GPIO_InitStructure;
+
+  /* TIM3 clock enable */
+  RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
+
+  /* GPIOC clock enable */
+  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);
+  
+  /* GPIOC Configuration: TIM3 CH2 (PC7)*/
+  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_7;
+  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
+  GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP ;
+  GPIO_Init(GPIOC, &GPIO_InitStructure); 
+
+  /* Connect TIM3 pins to AF2 */  
+  GPIO_PinAFConfig(GPIOC, GPIO_PinSource7, GPIO_AF_TIM3); 
+
+}
+
+
+void TIM3_CH2_Config()
+{
+	TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
+	TIM_OCInitTypeDef  TIM_OCInitStructure;
+	// 配置20ms的脉冲配置
+	TIM_TimeBaseStructure.TIM_Period = 2000-1;
+	TIM_TimeBaseStructure.TIM_Prescaler = 840-1;
+	TIM_TimeBaseStructure.TIM_ClockDivision = 0;
+	TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+	TIM_TimeBaseInit(TIM3, &TIM_TimeBaseStructure);
+
+
+	// 配置PWM通道2
+	TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
+	TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
+	// 初始化0°
+	TIM_OCInitStructure.TIM_Pulse = 0;
+	// 高电平有效
+	TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;
+	TIM_OC2Init(TIM3, &TIM_OCInitStructure);
+	//使能预装载寄存器,用来比较的
+	TIM_OC2PreloadConfig(TIM3, TIM_OCPreload_Enable);
+
+
+
+
+	TIM_ARRPreloadConfig(TIM3, ENABLE);
+
+	/* TIM3 enable counter */
+	TIM_Cmd(TIM3, ENABLE);
+
+}
+```
+
+
+
+串口通信代码
+
+```c
+#include "./USART/uart.h"
+
+// 1开灯,2关灯, 3舵机前移, 4舵机后移
+volatile uint8_t Flag = 0;
+
+void UART_Config(uint32_t boud)
+{
+	USART_InitTypeDef USART_InitStructure;
+	NVIC_InitTypeDef NVIC_InitStructure;
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	/* Enable GPIO clock */
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
+
+
+	/* Connect USART pins to AF7 */
+	GPIO_PinAFConfig(GPIOA, GPIO_PinSource9, GPIO_AF_USART1);
+	GPIO_PinAFConfig(GPIOA, GPIO_PinSource10, GPIO_AF_USART1);
+
+	/* Configure USART Tx and Rx as alternate function push-pull */
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9|GPIO_Pin_10;
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+
+
+	USART_InitStructure.USART_BaudRate = boud;
+	USART_InitStructure.USART_WordLength = USART_WordLength_8b;
+	USART_InitStructure.USART_StopBits = USART_StopBits_1;
+	USART_InitStructure.USART_Parity = USART_Parity_No;
+	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+	USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+	USART_Init(USART1, &USART_InitStructure);
+
+	USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
+	/* NVIC configuration */
+	/* Enable the USARTx Interrupt */
+	NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+
+	/* Enable USART */
+	USART_Cmd(USART1, ENABLE);
+}
+
+
+void USART1_IRQHandler(void)
+{
+	uint8_t data = 0;
+	/* USART in Receiver mode */
+	if (USART_GetITStatus(USART1, USART_IT_RXNE) == SET)
+	{
+		data = USART_ReceiveData(USART1);
+		USART_SendData(USART1, data);
+		switch(data)
+		{
+			case 0xA1: Flag=1; break;
+			case 0xA2: Flag=2; break;
+			case 0x0C: Flag=3; break;
+			case 0x0D: Flag=4; break;
+		}
+	}	
+}
+```
+
+
+
+
+
+### 无线通信
+
+#### 主流的无线通信方法
+
+ BLE, WIFI. Zigbee, LoRa
+
+
+
+BLE:
+
+BLE是经典蓝牙的低功耗版本，它采用频率跳跃扩频(FHSS)技术来抵抗干扰。BLE使用主从架构，其中主设备可以同时连接多个从设备。它的调制方式采用高斯频移键控(GFSK)，这种调制方式可以在保证传输可靠性的同时降低功耗。BLE的数据包很小，通常只有几十字节，这也有助于降低传输时的能量消耗。
+
+
+
+对于WiFi： WiFi使用OFDM（正交频分复用）调制技术，这种技术可以在有限带宽内传输大量数据。现代WiFi支持MIMO（多输入多输出）技术，通过多根天线同时收发数据来提高传输速率。WiFi的MAC层采用CSMA/CA（载波侦听多路访问/冲突避免）机制来协调多个设备的传输，这种机制虽然会带来一些延迟，但可以有效避免数据冲突。
+
+
+
+再看Zigbee： Zigbee基于IEEE 802.15.4标准，采用DSSS（直接序列扩频）技术来提高抗干扰能力。它的网络层支持自组网和自愈合功能，如果某个节点失效，网络可以自动寻找新的路由路径。Zigbee使用CSMA-CA机制进行信道访问，并支持信标模式和非信标模式两种工作方式。在信标模式下，协调器会定期发送信标帧来同步网络。
+
+
+
+LoRa（Long Range）是一种专门为物联网设计的远距离通信技术，它有许多独特的特征：
+
+1.  调制技术： LoRa使用CSS（Chirp Spread Spectrum，线性调频扩频）调制技术。这种调制方式通过在频率上的线性变化来传输数据。CSS技术具有很强的抗干扰能力，即使在信号很弱的情况下也能正确解调数据。
+2.  扩频因子（SF）： LoRa引入了可变扩频因子（SF7到SF12）的概念。更高的扩频因子可以提供更远的传输距离，但会降低数据率。这种灵活性让用户可以根据实际需求在覆盖范围和数据率之间做出权衡。比如：
+
+-   SF7适合近距离高速传输
+-   SF12则用于远距离低速传输
+
+1.  自适应数据率（ADR）： LoRa支持自适应数据率技术，终端设备可以根据信号质量自动调整传输参数，包括扩频因子、带宽和发射功率。这种机制可以优化网络容量并延长终端电池寿命。
+2.  链路预算： LoRa具有高达168dB的链路预算，这意味着信号可以穿透建筑物并传播很远距离。这种特性使它特别适合城市和地下环境中的应用。
+3.  LoRaWAN协议： 在LoRa物理层之上，通常使用LoRaWAN协议。LoRaWAN提供了三种设备类型：
+
+-   A类：最省电，采用ALOHA方式接入
+-   B类：允许周期性接收下行数据
+-   C类：持续接收，适合需要实时控制的场景
+
+1.  安全性： LoRaWAN实现了端到端加密，使用AES-128加密算法，并采用了双层安全密钥机制：
+
+-   网络会话密钥（NwkSKey）用于网络级别的安全
+
+-   应用会话密钥（AppSKey）用于应用层数据的加密
+
+    
+
+    
+
+    应用场景示例： LoRa技术特别适合以下场景：
+
+-   智慧农业：监测土壤湿度、温度等环境参数
+-   智慧城市：垃圾桶管理、街道照明控制
+-   资产追踪：追踪集装箱、货物等大型资产的位置
+-   环境监测：空气质量监测、水质监测等
+
+
+
+
+
+传输距离和覆盖范围：
+
+-   BLE (蓝牙低功耗)的传输距离相对较短，通常在10-50米范围内。这使它特别适合近距离的个人设备互联。
+-   WiFi的覆盖范围在室内可达50-100米左右。在开阔地带可以更远，这让它成为家庭和办公室网络的理想选择。
+-   Zigbee的传输距离介于10-100米之间，但通过网状网络可以扩展覆盖范围。每个节点都可以作为中继器。
+-   LoRa则具有最长的传输距离，在农村地区可达15公里，城市环境下也能达到2-5公里。这使它特别适合远距离物联网应用。
+
+
+
+
+
+#### 蓝牙模块
+
+![image-20241130105222187](img/image-20241130105222187.png)
+
+![image-20241130110219636](img/image-20241130110219636.png)
+
+我们要配置蓝牙模块的参数,需要使用AT指令集
+
+![image-20241130110955818](img/image-20241130110955818.png)
+
+我这里是JDY-31的蓝牙模块, 对应的指令集如上, 需要注意的是修改配置的过程中,蓝牙是不能被连接的
+
+![image-20241130111844231](img/image-20241130111844231.png)
+
