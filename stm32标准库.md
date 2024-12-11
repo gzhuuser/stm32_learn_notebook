@@ -285,6 +285,8 @@ M, N, P的值是: 以25Mhz为例,因为stm官方用的是25Mhz的
 
 ![image-20241127153422364](img/image-20241127153422364.png)
 
+#### 修改stm32f4xx的时钟配置
+
 去到stm32f4xx.h可以找到HSE_VALUE来修改
 
 对于M, P, Q可以去system_stm32f4xx.c中的PLL_X 来修改
@@ -2287,9 +2289,13 @@ LoRa（Long Range）是一种专门为物联网设计的远距离通信技术，
 
 #### 蓝牙模块
 
+##### 概述
+
 ![image-20241130105222187](img/image-20241130105222187.png)
 
 ![image-20241130110219636](img/image-20241130110219636.png)
+
+##### 指令集
 
 我们要配置蓝牙模块的参数,需要使用AT指令集
 
@@ -2298,4 +2304,2475 @@ LoRa（Long Range）是一种专门为物联网设计的远距离通信技术，
 我这里是JDY-31的蓝牙模块, 对应的指令集如上, 需要注意的是修改配置的过程中,蓝牙是不能被连接的
 
 ![image-20241130111844231](img/image-20241130111844231.png)
+
+
+
+JDY-31的性能:
+
+基于CC2541芯片
+
+Flash存储: 256KB 这个存储空间用于存放程序代码和固定的数据.
+
+RAM存储: 8KB RAM用于运行时的数据存储和处理
+
+
+
+初始化串口1和蓝牙通信模块
+
+uart.c
+
+```c
+#include "./USART/uart.h"
+
+// 1开灯,2关灯, 3舵机前移, 4舵机后移
+volatile uint8_t Flag = 0;
+
+void UART_Config(uint32_t boud)
+{
+	USART_InitTypeDef USART_InitStructure;
+	NVIC_InitTypeDef NVIC_InitStructure;
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	/* Enable GPIO clock */
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
+
+
+	/* Connect USART pins to AF7 */
+	GPIO_PinAFConfig(GPIOA, GPIO_PinSource9, GPIO_AF_USART1);
+	GPIO_PinAFConfig(GPIOA, GPIO_PinSource10, GPIO_AF_USART1);
+
+	/* Configure USART Tx and Rx as alternate function push-pull */
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9|GPIO_Pin_10;
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+
+
+	USART_InitStructure.USART_BaudRate = boud;
+	USART_InitStructure.USART_WordLength = USART_WordLength_8b;
+	USART_InitStructure.USART_StopBits = USART_StopBits_1;
+	USART_InitStructure.USART_Parity = USART_Parity_No;
+	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+	USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+	USART_Init(USART1, &USART_InitStructure);
+
+	USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
+	/* NVIC configuration */
+	/* Enable the USARTx Interrupt */
+	NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+
+	/* Enable USART */
+	USART_Cmd(USART1, ENABLE);
+}
+
+
+void UART2_Config(uint32_t boud)
+{
+	// PA2和3对应TX和RX
+	USART_InitTypeDef USART_InitStructure;
+	NVIC_InitTypeDef NVIC_InitStructure;
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	/* Enable GPIO clock */
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE);
+
+
+	/* Connect USART pins to AF7 */
+	GPIO_PinAFConfig(GPIOA, GPIO_PinSource2, GPIO_AF_USART2);
+	GPIO_PinAFConfig(GPIOA, GPIO_PinSource3, GPIO_AF_USART2);
+
+	/* Configure USART Tx and Rx as alternate function push-pull */
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2|GPIO_Pin_3;
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+
+
+	USART_InitStructure.USART_BaudRate = boud;
+	USART_InitStructure.USART_WordLength = USART_WordLength_8b;
+	USART_InitStructure.USART_StopBits = USART_StopBits_1;
+	USART_InitStructure.USART_Parity = USART_Parity_No;
+	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+	USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+	USART_Init(USART2, &USART_InitStructure);
+
+	USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);
+	/* NVIC configuration */
+	/* Enable the USARTx Interrupt */
+	NVIC_InitStructure.NVIC_IRQChannel = USART2_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+
+	/* Enable USART */
+	USART_Cmd(USART2, ENABLE);
+}
+
+void UART2_SendString(char * str)
+{
+    while((*str) != '\0')
+    {
+        USART_SendData(USART2, *str++);
+        // 等待发送完成
+        while(USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET);
+        // 添加等待传输完成标志
+        while(USART_GetFlagStatus(USART2, USART_FLAG_TC) == RESET);
+    }
+}
+
+void UART2_SendString_to_USART1(char * str)
+{
+    while((*str) != '\0')
+    {
+        USART_SendData(USART1, *str++);
+        // 等待发送完成
+        while(USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET);
+        // 添加等待传输完成标志
+        while(USART_GetFlagStatus(USART2, USART_FLAG_TC) == RESET);
+    }
+}
+
+void USART1_IRQHandler(void)
+{
+	uint8_t data = 0;
+	/* USART in Receiver mode */
+	if (USART_GetITStatus(USART1, USART_IT_RXNE) == SET)
+	{
+		data = USART_ReceiveData(USART1);
+		USART_SendData(USART2, data);
+	}	
+	
+}
+
+volatile uint8_t uart2_buf[128]={0};
+volatile uint8_t uart2_count=0;
+volatile uint8_t uart2_flag=0;
+
+void USART2_IRQHandler(void)
+{
+	uint8_t data = 0;
+	/* USART in Receiver mode */
+	if (USART_GetITStatus(USART2, USART_IT_RXNE) == SET && uart2_flag==0)
+	{
+        if(uart2_count < 128 - 1)
+        {
+			
+            uart2_buf[uart2_count++] = USART_ReceiveData(USART2);
+			USART_SendData(USART1, uart2_buf[uart2_count-1]);
+            if(uart2_count >= 2 && 
+               uart2_buf[uart2_count-1] == '\n')
+            {
+                uart2_flag = 1;
+                uart2_buf[uart2_count] = '\0';
+				uart2_count = 0;
+            }
+        }
+        else
+        {
+            // 缓冲区溢出时，清空缓冲区并重置
+            memset((char*)uart2_buf, 0, sizeof(uart2_buf));
+            uart2_count = 0;
+        }
+	}
+}
+
+```
+
+主函数main.c
+
+```c
+/**
+  ******************************************************************************
+  * @file    main.c 
+  * @author  苏向标
+  * @version V1.0.0
+  * @date    2024/11/20
+  * @brief   程序主函数
+  ******************************************************************************
+  * LED控制亮度
+  * None
+  ******************************************************************************
+  */
+
+/* Includes ----------------定义头文件---------------------------------------*/
+
+#include "stm32f4xx.h"
+#include "LED.h"
+#include "Delay.h" 
+#include "./TIM/tim.h"
+#include "./USART/uart.h"
+#include "./SG/SG.h"
+#include "./BUZZER/buzzer.h"
+
+/** @addtogroup Template_Project
+  * @{
+  */ 
+
+/* Private typedef --------------------------定义类型----------------------------*/
+/* Private define ---------------------------定义声明----------------------------*/
+/* Private macro ----------------------------宏定义------------------------------*/
+/* Private variables ------------------------定义变量----------------------------*/
+/* Private function prototypes --------------函数声明----------------------------*/
+/* Private functions ------------------------定义函数----------------------------*/
+
+/**
+  * @brief  Main program
+  * @param  None
+  * @retval None
+  */
+
+ 
+void delay_ms_(uint32_t nms)
+{
+	
+	SysTick->CTRL = 0; 				 // 关闭定时器
+	SysTick->LOAD = 21*nms*1000 - 1 ;	 // 设置重载值
+	SysTick->VAL  = 0; 				 // 清除当前值
+	SysTick->CTRL = 1; 				 // 开启定时器，并且使用外部时钟 21MHZ 
+	while ((SysTick->CTRL & 0x00010000)==0);// 等待计数完成
+	SysTick->CTRL = 0; 			     // 关闭定时器		
+}
+
+
+int main(void)
+{
+	uint32_t current_duty=2;
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
+	Init_Buzzer();
+	LED_GPIO_Config();
+	UART_Config(9600);
+	UART2_Config(9600);
+//	UART2_SendString("AT+VERSION\r\n");
+//	delay_ms_(100);
+//	UART2_SendString("AT+NAMESXB\r\n");
+//	delay_ms_(100);
+//	UART2_SendString("AT+ENLOG1\r\n");
+//	delay_ms_(100);
+//	UART2_SendString("AT+RESET\r\n");
+//	delay_ms_(100);
+
+    for (;;)
+	{   
+		if(uart2_flag == 1)
+		{
+			if(strstr((char*)uart2_buf, "led_on\n"))
+			{
+				GPIO_ResetBits(GPIOF, GPIO_Pin_9);
+			}
+			if(strstr((char*)uart2_buf, "led_off\n"))
+			{
+				GPIO_SetBits(GPIOF, GPIO_Pin_9);
+			}
+			if(strstr((char*)uart2_buf, "beep_on\n"))
+			{
+				GPIO_SetBits(GPIOF, GPIO_Pin_8);
+			}
+			if(strstr((char*)uart2_buf, "beep_off\n"))
+			{
+				GPIO_ResetBits(GPIOF, GPIO_Pin_8);
+			}
+			
+			memset((char*)uart2_buf, 0, 128);
+			uart2_flag= 0;
+
+		}
+
+    }
+}
+  
+
+```
+
+
+
+
+
+#### wifi模块
+
+##### 简介
+
+如果打算让硬件设备可以通过云服务器进行通信（数据上报/指令下发），像主流的云服务器有阿里云、腾讯云、华为云，以及其他物联网云平台：巴法云.......，硬件设备需要通过TCP/IP协议栈和云服务器建立连接。
+
+ 
+
+通信的前提是需要建立链接，建立连接的前提是开发板有能力连接云服务器，需要借助WIFI模组实现，比较主流的是ESP系列的WIFI模块（ESP8266-01S）。
+
+![image-20241203202135399](img/image-20241203202135399.png)
+
+wifi模块本身不能联网,他只是封装好了TCP/IP协议栈, 真正完成通信的是网关, 网关可以是热点和路由器等, 只需要wifi模块连接网关即可
+
+##### 硬件接线
+
+![image-20241203202152871](img/image-20241203202152871.png)
+
+##### AT指令集
+
+![image-20241203202239637](img/image-20241203202239637.png)
+
+波特率是115200, AT必须大写,并且以\r\n结尾
+
+
+
+##### wifi模块初始化步骤
+
+1.   发送AT指令测试
+2.   获取配置信息
+3.   设置AP和STA模型
+4.   连接网关
+5.   使能透传模式
+6.   建立tcp连接
+7.   进入透传模式
+8.   订阅产品
+9.   接收订阅
+
+
+
+
+
+发送AT指令:
+
+```c
+    UART3_SendString("AT\r\n");
+```
+
+获取配置信息
+
+```c
+// 获取配置信息
+UART3_SendString("AT+GMR\r\n");
+```
+
+配置AP和STA模型
+
+```c
+// 设置AP和STA模式
+UART3_SendString("AT+CWMODE=3\r\n");
+```
+
+![image-20241203203300414](img/image-20241203203300414.png)
+
+AP模式: 自己就是热点,让别人来连接
+
+STA模式: 自己去连接别人
+
+
+
+连接网关
+
+这一步就是连接自己的热点(手机或者路由器)
+
+```c
+// 连接wifi
+UART3_SendString("AT+CWJAP=\"sxb\",\"123456789\"\r\n");0
+```
+
+
+
+使能透析模式
+
+```c
+    // 使能透传模式
+    UART3_SendString("AT+CIPMODE=1\r\n");
+```
+
+这里虽然是使能但实际还没有开始进入透析模式
+
+
+
+建立TCP连接
+
+```c
+    // 建立与bemfa.com服务器的TCP连接
+    UART3_SendString("AT+CIPSTART=\"TCP\",\"bemfa.com\",8344\r\n");
+```
+
+进入透传模式
+
+```c
+UART3_SendString("AT+CIPSEND\r\n");
+```
+
+进入这一步后除非发送+++主动断开,否则会一直进入透传模式, 所有AT指令都会失效, 发送的内容都是发送给服务器的
+
+
+
+订阅主题
+
+```c
+    UART3_SendString("cmd=1&uid=3f347ad0bdb04adf9c7f4a12a6df0687&topic=LED002,BEEP002\r\n");
+```
+
+
+
+
+
+
+
+##### 完整代码
+
+wifi.c
+
+```c
+#include "./WIFI/wifi.h"
+#include "./USART/uart.h"
+#include "./Delay.h"
+#include <string.h>
+
+
+void Wifi_Init(void)
+{
+    // Return value for error checking
+    uint8_t init_success = 1;  // 1 = success, 0 = failure
+    
+    // 先退出透传(如果进入了透传的话)
+    UART3_SendString("+++");
+    delay_ms(100);
+    USART1_SendString((char*)uart3_buf);
+    uart3_count = 0;
+    memset((char*)uart3_buf, 0, 128);
+    
+    // 基础AT测试
+    UART3_SendString("AT\r\n");
+    delay_ms(100);
+    USART1_SendString((char*)uart3_buf);
+    if(strstr((char*)uart3_buf, "OK") == NULL)
+    {
+        USART1_SendString("AT Init fail.\r\n");
+        init_success = 0;
+        return;
+    }
+    uart3_count = 0;
+    memset((char*)uart3_buf, 0, 128);
+    
+    // 获取配置信息
+    UART3_SendString("AT+GMR\r\n");
+    delay_ms(100);
+    USART1_SendString((char*)uart3_buf);
+    if(strstr((char*)uart3_buf, "OK") == NULL)
+    {
+        USART1_SendString("Get version fail.\r\n");
+        init_success = 0;
+        return;
+    }
+    memset((char*)uart3_buf, 0, 128);
+    uart3_count = 0;
+    
+    // 设置AP和STA模式
+    UART3_SendString("AT+CWMODE=3\r\n");
+    delay_ms(100);
+    USART1_SendString((char*)uart3_buf);
+    if(strstr((char*)uart3_buf, "OK") == NULL)
+    {
+        USART1_SendString("Set mode fail.\r\n");
+        init_success = 0;
+        return;
+    }
+    memset((char*)uart3_buf, 0, 128);
+    uart3_count = 0;
+    
+    // 连接wifi
+    UART3_SendString("AT+CWJAP=\"sxb\",\"123456789\"\r\n");
+    delay_s(12);  // WiFi连接需要较长时间
+    USART1_SendString((char*)uart3_buf);
+    if(strstr((char*)uart3_buf, "OK") == NULL)
+    {
+        USART1_SendString("WiFi connection fail.\r\n");
+        init_success = 0;
+        return;
+    }
+    memset((char*)uart3_buf, 0, 128);
+    uart3_count = 0;
+    
+    // 使能透传模式
+    UART3_SendString("AT+CIPMODE=1\r\n");
+    delay_ms(100);
+    USART1_SendString((char*)uart3_buf);
+    if(strstr((char*)uart3_buf, "OK") == NULL)
+    {
+        USART1_SendString("Set transfer mode fail.\r\n");
+        init_success = 0;
+        return;
+    }
+    memset((char*)uart3_buf, 0, 128);
+    uart3_count = 0;
+    
+    // 如果所有步骤都成功完成
+    if(init_success)
+    {
+        USART1_SendString("WiFi initialization successful.\r\n");
+    }
+}
+
+
+// 建立TCP连接的函数
+uint8_t WiFi_ConnectTCP(char* TCP)
+{
+    // 建立与bemfa.com服务器的TCP连接
+    UART3_SendString("AT+CIPSTART=\"TCP\",\"bemfa.com\",8344\r\n");
+    delay_s(8);  // 等待连接建立
+    USART1_SendString((char*)uart3_buf);
+    
+    // 检查连接是否成功
+    if(strstr((char*)uart3_buf, "OK") == NULL)
+    {
+        USART1_SendString("TCP connection failed.\r\n");
+        memset((char*)uart3_buf, 0, 128);
+        uart3_count = 0;
+        return 0;  // 返回0表示连接失败
+    }
+    
+    memset((char*)uart3_buf, 0, 128);
+    uart3_count = 0;
+    return 1;  // 返回1表示连接成功
+}
+
+// 进入透传模式的函数
+uint8_t WiFi_EnterTransmitMode(void)
+{
+    // 发送进入透传模式的命令
+    UART3_SendString("AT+CIPSEND\r\n");
+    delay_s(5);  // 等待模式切换
+    USART1_SendString((char*)uart3_buf);
+    
+    // 检查是否成功进入透传模式
+    if(strstr((char*)uart3_buf, ">") == NULL)  // 透传模式会返回'>'符号
+    {
+        USART1_SendString("Failed to enter transmit mode.\r\n");
+        memset((char*)uart3_buf, 0, 128);
+        uart3_count = 0;
+        return 0;  // 返回0表示进入失败
+    }
+    
+    memset((char*)uart3_buf, 0, 128);
+    uart3_count = 0;
+    ttflag = 1;  // 设置透传标志
+    return 1;  // 返回1表示成功进入透传模式
+}
+
+// 订阅主题的函数
+uint8_t WiFi_SubscribeTopics(char * Topic)
+{
+    // 发送订阅命令
+    UART3_SendString(Topic);
+    delay_s(5);  // 等待订阅响应
+    USART1_SendString((char*)uart3_buf);
+    
+    // 在透传模式下可能收不到标准的OK响应，可以检查是否有错误信息
+    if(strstr((char*)uart3_buf, "error") != NULL || strstr((char*)uart3_buf, "fail") != NULL)
+    {
+        USART1_SendString("Topic subscription failed.\r\n");
+        memset((char*)uart3_buf, 0, 128);
+        uart3_count = 0;
+        return 0;  // 返回0表示订阅失败
+    }
+    
+    memset((char*)uart3_buf, 0, 128);
+    uart3_count = 0;
+    return 1;  // 返回1表示订阅成功
+}
+
+// 整合以上功能的辅助函数
+uint8_t WiFi_SetupConnection(char* TCP, char * Topic)
+{
+    // 依次执行所有步骤，如果任何步骤失败就返回0
+    if (!WiFi_ConnectTCP(TCP))
+    {
+        return 0;
+    }
+    
+    if (!WiFi_EnterTransmitMode())
+    {
+        return 0;
+    }
+    
+    if (!WiFi_SubscribeTopics(Topic))
+    {
+        return 0;
+    }
+    
+    USART1_SendString("Connection setup successful.\r\n");
+    return 1;  // 所有步骤都成功完成
+}
+
+// 提取topic的函数
+void extract_topic(char *response, char *topic)
+{
+    char *topic_ptr = strstr(response, "topic=");
+    if(topic_ptr != NULL)
+    {
+        topic_ptr += 6;  // 跳过"topic="这6个字符
+        char *topic_end = strchr(topic_ptr, '&');
+        if(topic_end != NULL)
+        {
+            int topic_len = topic_end - topic_ptr;
+            strncpy(topic, topic_ptr, topic_len);  // 复制找到的topic值
+            topic[topic_len] = '\0';  // 确保字符串正确终止
+        }
+    }
+}
+
+// 提取msg的函数
+void extract_msg(char *response, char *msg)
+{
+    char *msg_ptr = strstr(response, "msg=");
+    if(msg_ptr != NULL)
+    {
+        msg_ptr += 4;  // 跳过"msg="这4个字符
+        // 由于msg通常在字符串末尾，可以直接复制到结束
+        strcpy(msg, msg_ptr);
+    }
+}
+```
+
+
+
+心跳机制:
+
+tim.c
+
+```c
+#include "./TIM/tim.h"
+#include "./USART/uart.h"
+uint32_t TIM9_count=0;
+uint32_t TIM14_count=0;
+
+
+void TIM14_Config(void)
+{
+    GPIO_InitTypeDef GPIO_InitStructure_LED;
+    
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOF, ENABLE);
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM14, ENABLE);
+
+    // 配置LED0对应的GPIO引脚PF9
+    GPIO_InitStructure_LED.GPIO_Pin = GPIO_Pin_9;       
+    GPIO_InitStructure_LED.GPIO_Mode = GPIO_Mode_AF;    
+    GPIO_InitStructure_LED.GPIO_OType = GPIO_OType_PP;   
+    GPIO_InitStructure_LED.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStructure_LED.GPIO_PuPd = GPIO_PuPd_UP;   
+    
+    GPIO_Init(GPIOF, &GPIO_InitStructure_LED);
+	GPIO_PinAFConfig(GPIOF, GPIO_PinSource9, GPIO_AF_TIM14);
+	
+	TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
+
+	// 配置1s的定时器配置
+	TIM_TimeBaseStructure.TIM_Period = 8400-1;
+	TIM_TimeBaseStructure.TIM_Prescaler = 10000-1;
+	TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+	TIM_TimeBaseInit(TIM14, &TIM_TimeBaseStructure);
+
+    // 使能TIM14更新中断
+    TIM_ITConfig(TIM14, TIM_IT_Update, ENABLE);
+    TIM_ARRPreloadConfig(TIM14, ENABLE);
+    
+    // 配置NVIC
+    NVIC_InitTypeDef NVIC_InitStructure;
+    NVIC_InitStructure.NVIC_IRQChannel = TIM8_TRG_COM_TIM14_IRQn;  // TIM14的中断通道
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;      // 抢占优先级0
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;             // 子优先级1
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;                // 使能通道
+    NVIC_Init(&NVIC_InitStructure);
+    
+    // 使能定时器
+    TIM_Cmd(TIM14, ENABLE);
+}
+	
+
+void TIM8_TRG_COM_TIM14_IRQHandler(void)
+{
+    if(TIM_GetITStatus(TIM14, TIM_IT_Update) != RESET)
+    {
+        // 清除中断标志位
+        TIM_ClearITPendingBit(TIM14, TIM_IT_Update);
+        
+        // 增加计数器
+        TIM14_count++;
+        
+        // 每10次中断执行一次动作
+        if(TIM14_count == 10)
+        {
+            // 在这里添加你想要执行的动作
+            //
+			UART3_SendString("cmd=0&msg=ping\r\n");
+            // 重置计数器
+            TIM14_count = 0;
+        }
+    }
+}
+```
+
+每10s发送一次内容过去
+
+
+
+主函数
+
+main.c
+
+```c
+/**
+  ******************************************************************************
+  * @file    main.c 
+  * @author  苏向标
+  * @version V1.0.0
+  * @date    2024/11/20
+  * @brief   程序主函数
+  ******************************************************************************
+  * LED控制亮度
+  * None
+  ******************************************************************************
+  */
+
+/* Includes ----------------定义头文件---------------------------------------*/
+
+#include "stm32f4xx.h"
+#include "LED.h"
+#include "Delay.h" 
+#include "./TIM/tim.h"
+#include "./USART/uart.h"
+#include "./SG/SG.h"
+#include "./BUZZER/buzzer.h"
+#include <string.h>
+#include "./WIFI/wifi.h"
+/** @addtogroup Template_Project
+  * @{
+  */ 
+
+/* Private typedef --------------------------定义类型----------------------------*/
+/* Private define ---------------------------定义声明----------------------------*/
+/* Private macro ----------------------------宏定义------------------------------*/
+#define TCP_CFG "AT+CIPSTART=\"TCP\",\"bemfa.com\",8344\r\n"
+#define Topic "cmd=1&uid=3f347ad0bdb04adf9c7f4a12a6df0687&topic=LED002,BEEP002\r\n"
+/* Private variables ------------------------定义变量----------------------------*/
+/* Private function prototypes --------------函数声明----------------------------*/
+/* Private functions ------------------------定义函数----------------------------*/
+
+/**
+  * @brief  Main program
+  * @param  None
+  * @retval None
+  */
+
+ 
+void delay_ms_(uint32_t nms)
+{
+	
+	SysTick->CTRL = 0; 				 // 关闭定时器
+	SysTick->LOAD = 21*nms*1000 - 1 ;	 // 设置重载值
+	SysTick->VAL  = 0; 				 // 清除当前值
+	SysTick->CTRL = 1; 				 // 开启定时器，并且使用外部时钟 21MHZ 
+	while ((SysTick->CTRL & 0x00010000)==0);// 等待计数完成
+	SysTick->CTRL = 0; 			     // 关闭定时器		
+}
+
+void delay_s_(uint32_t ns)
+{
+	for(;ns>0;ns--)
+	{
+		delay_ms_(500);
+		delay_ms_(500);
+	}
+}
+
+int main(void)
+{
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
+	Init_Buzzer();
+	LED_GPIO_Config();
+//    GPIO_ResetBits(GPIOF, GPIO_Pin_9);
+//    GPIO_ResetBits(GPIOF, GPIO_Pin_10);
+//    GPIO_ResetBits(GPIOE, GPIO_Pin_13);
+//    GPIO_ResetBits(GPIOE, GPIO_Pin_14);	
+	UART_Config(115200);
+	UART3_Config(115200);
+
+	Wifi_Init();
+	WiFi_SetupConnection(TCP_CFG, Topic);
+	
+	//初始化定时器, 每10s发送一次心跳
+	TIM14_Config();
+	char msg[16];
+	char topic[32];
+    for (;;)
+	{   
+		if(uart3_flag == 1)
+		{
+			uart3_flag = 0;
+			uart3_buf[uart3_count-2] = '\0';
+			USART1_SendString((char*)uart3_buf);
+			
+			// 提取主题和消息内容
+			extract_topic((char*)uart3_buf, topic);
+			extract_msg((char*)uart3_buf, msg);
+			
+			// 检查topic和msg是否包含有效内容
+			if(strlen(topic) > 0 && strlen(msg) > 0)
+			{
+				if(strncmp(topic, "BEEP002", 7) == 0)
+				{
+					if(strncmp(msg, "off", 3) == 0)
+					{
+						GPIO_ResetBits(GPIOF, GPIO_Pin_8);
+						USART1_SendString("执行关闭操作\r\n");
+					}					
+					else if(strncmp(msg, "on", 2) == 0)
+					{
+						GPIO_SetBits(GPIOF, GPIO_Pin_8);
+						USART1_SendString("执行打开操作\r\n");						
+					}
+				}
+				else if(strncmp(topic, "LED002", 6) == 0)
+				{
+					if(strncmp(msg, "off", 3) == 0)
+					{
+						GPIO_SetBits(GPIOF, GPIO_Pin_10);
+						USART1_SendString("执行关闭LED操作\r\n");
+					}					
+					else if(strncmp(msg, "on", 2) == 0)
+					{
+						GPIO_ResetBits(GPIOF, GPIO_Pin_10);
+						USART1_SendString("执行打开LED操作\r\n");						
+					}				
+				}
+
+			}
+			memset(topic, 0, 32);
+			memset(msg, 0, 16);
+			memset((char*)uart3_buf, 0, 128);
+			uart3_count = 0;
+		}
+//		UART3_SendString("cmd=2&uid=3f347ad0bdb04adf9c7f4a12a6df0687&topic=LED002&msg=off\r\n");
+//		delay_s_(5);
+//		USART1_SendString((char*)uart3_buf);
+//		memset((char*)uart3_buf, 0, 128);
+//		uart3_count = 0;
+//		
+//		
+//		UART3_SendString("cmd=2&uid=3f347ad0bdb04adf9c7f4a12a6df0687&topic=LED002&msg=on\r\n");
+//		delay_s_(5);
+//		USART1_SendString((char*)uart3_buf);
+//		memset((char*)uart3_buf, 0, 128);
+//		uart3_count = 0;		
+
+    }
+}
+  
+
+```
+
+
+
+
+
+
+
+向特定的主题推送内容:
+
+```c
+/**
+ * @brief 发送订阅消息
+ * @param Topic: 主题
+ * @param Msg: 发送的消息
+ * @return: true=成功, false=失败
+ */
+bool ESP8266_Send(char * Topic, char * Msg)
+{
+    char public_msg[256];
+    uint16_t i = 3000; 
+	uint8_t cnt = 3;
+    char *pstr;
+	
+    // 构建发送消息
+    snprintf(public_msg, sizeof(public_msg), 
+             "cmd=2&uid=3f347ad0bdb04adf9c7f4a12a6df0687&topic=%s&msg=%s\r\n", 
+             Topic, Msg);
+    
+	while(cnt--)
+	{
+		i = 3000;
+		UART3_SendString((char*)public_msg);
+		for(;i>0;i--)
+		{
+			delay_ms(1);
+			if(uart3_flag)
+			{
+				uart3_flag = 0;
+				USART1_SendString((char*)uart3_buf);
+				
+				pstr = strstr((char*)uart3_buf, "cmd=2&res=1");
+				if(pstr)
+				{
+					memset((char *)uart3_buf, 0, sizeof(uart3_buf));
+					uart3_count = 0;
+					USART1_SendString("Bemfa Publish Msg to Topic OK!\r\n");
+					return true;
+				}
+			}
+		}
+	}
+	uart3_flag = 0;
+	memset((char *)uart3_buf, 0, sizeof(uart3_buf));
+	uart3_count = 0;
+    return false;
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### printf重定向
+
+
+
+![image-20241204144257733](img/image-20241204144257733.png)
+
+![image-20241204144454830](img/image-20241204144454830.png)
+
+
+
+重定向串口1(前提是串口1使能了)
+
+
+
+具体代码:
+
+```c
+#include<stdio.h>
+
+struct __FILE { int handle; /* Add whatever you need here */ };
+FILE __stdout;
+FILE __stdin;
+
+//对fputc函数进行重定向，重定向UART1
+int fputc(int ch, FILE *f) 
+{
+	USART_SendData(USART1,ch); //把数据通过UART1转发出去
+	while( USART_GetFlagStatus(USART1,USART_FLAG_TXE) == RESET);  //为了等待该字节发送完成	
+	return ch;
+}
+void _sys_exit(int return_code) 
+{
+
+}
+
+```
+
+
+
+
+
+
+
+
+
+### 传感器
+
+#### 温湿度传感器
+
+##### 简述
+
+![image-20241204201700834](img/image-20241204201700834.png)
+
+##### 量程范围:
+
+![image-20241204201714626](img/image-20241204201714626.png)
+
+##### 硬件接线
+
+![image-20241204201743769](img/image-20241204201743769.png)
+
+这里是单片机电路, stm32的接入方式还有些差异,不过记住2号引脚DQ就是用来接收和传输数据的
+
+##### 工作原理
+
+![image-20241204152802275](img/image-20241204152802275.png)
+
+##### 通信细节
+
+1.   MCU向传感器发送开始信号后马上变成输入模式
+2.   温湿度传感器响应接收信号和准备输出信号
+3.   开始传输数据
+4.   断开响应
+
+![image-20241204202634960](img/image-20241204202634960.png)
+
+![image-20241204202638790](img/image-20241204202638790.png)
+
+![image-20241204202645341](img/image-20241204202645341.png)
+
+##### 代码实现
+
+初始化引脚, 和DQ引脚相连接的是PG9
+
+```c
+void DHT11_Init(void)
+{
+    GPIO_InitTypeDef GPIO_InitStructure_PHT;
+    
+    // 使能GPIO G时钟
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOG, ENABLE);
+	
+	GPIO_InitStructure_PHT.GPIO_Pin = GPIO_Pin_9;       
+    GPIO_InitStructure_PHT.GPIO_Mode = GPIO_Mode_OUT;    
+    GPIO_InitStructure_PHT.GPIO_OType = GPIO_OType_PP;   
+    GPIO_InitStructure_PHT.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStructure_PHT.GPIO_PuPd = GPIO_PuPd_UP;   
+    
+    GPIO_Init(GPIOG, &GPIO_InitStructure_PHT);
+}
+```
+
+
+
+开始设置发送信号函数
+
+```c
+/**
+ * @brief 改变引脚模式
+ * @param mode: 输出模式和输入模式, GPIO_Mode_OUT/ GPIO_Mode_IN
+ * @return: None
+ */
+void DHT11_SetMode(GPIOMode_TypeDef mode)
+{
+    GPIO_InitTypeDef GPIO_InitStructure_PHT;
+    
+    // 使能GPIO G时钟
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOG, ENABLE);
+	
+	GPIO_InitStructure_PHT.GPIO_Pin = GPIO_Pin_9;       
+    GPIO_InitStructure_PHT.GPIO_Mode = mode;    
+    GPIO_InitStructure_PHT.GPIO_OType = GPIO_OType_PP;   
+    GPIO_InitStructure_PHT.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStructure_PHT.GPIO_PuPd = GPIO_PuPd_UP;   
+    
+    GPIO_Init(GPIOG, &GPIO_InitStructure_PHT);
+}
+/**
+* @brief 主机请求建立连接
+ * @param mode: 输出模式和输入模式, GPIO_Mode_OUT/ GPIO_Mode_IN
+ * @return: None
+ */
+void DHT11_Start(void)
+{
+	DHT11_SetMode(GPIO_Mode_OUT);
+	
+	// 把引脚拉低,持续>18ms, <30ms
+	GPIO_ResetBits(GPIOG,GPIO_Pin_9);
+	delay_ms(20);
+	GPIO_SetBits(GPIOG,GPIO_Pin_9);
+	// 将引脚变成输入模式, 接收信号
+	DHT11_SetMode(GPIO_Mode_IN);
+}
+
+```
+
+每次发送请求都要先改变引脚的模式,先输出后输入, 输出低电平时间在 18ms-30ms
+
+
+
+判断温湿度寄存器响应状态
+
+```c
+/**
+ * @brief 判断温湿度寄存器响应状态
+ * @param mode: 输出模式和输入模式, GPIO_Mode_OUT/ GPIO_Mode_IN
+ * @return: None
+ */
+bool DHT11_IsACK(void)
+{
+	// MCU等等DHT11把引脚电平拉低
+	uint32_t cnt = 0;
+	while( GPIO_ReadInputDataBit(GPIOG,GPIO_Pin_9) == 1 && cnt < 100 )
+	{
+		delay_us(1);
+		cnt++;
+	}
+	
+	if(cnt>=100)
+		return false;
+	
+	// 2. MCU等待DHT11把引脚电平拉高,如果输入读取是低电平就一直读,直到变成高电平为止
+	cnt = 0;
+	while(GPIO_ReadInputDataBit(GPIOG, GPIO_Pin_9) == 0 && cnt<100)
+	{
+		delay_us(1);
+		cnt++;
+	}
+	
+	if(cnt>=100)
+		return false;
+	else
+		return true;
+	
+}
+```
+
+![image-20241204203321695](img/image-20241204203321695.png)
+
+读取数据
+
+```c
+/**
+ * @brief 读取一个位
+ * @param mode: 输出模式和输入模式, GPIO_Mode_OUT/ GPIO_Mode_IN
+ * @return: None
+ */
+uint8_t DHT11_ReadBit(void)
+{
+	// MCU等等DHT11把引脚电平拉低
+	while(GPIO_ReadInputDataBit(GPIOG, GPIO_Pin_9) == 1);
+
+	// MCU等等DHT11把引脚电平拉低
+	while(GPIO_ReadInputDataBit(GPIOG, GPIO_Pin_9) == 0);
+	// 延时范围: >27us <80us
+	delay_us(40);
+	if(GPIO_ReadInputDataBit(GPIOG, GPIO_Pin_9) == 0)
+		return 0;
+	else
+		return 1;
+}
+
+/**
+ * @brief 读取一个字节
+ * @param mode: 输出模式和输入模式, GPIO_Mode_OUT/ GPIO_Mode_IN
+ * @return: None
+ */
+uint8_t DHT11_ReadByte(void)
+{
+	uint8_t data=0;
+	uint8_t i = 0;
+	
+	for(i=0;i<8;i++)
+	{
+		// DHT11传递过来的是MSB, 所以第一个是最后一个,每个位基本都要左移一次
+		data <<= 1;
+		data |= DHT11_ReadBit();
+	}
+ 
+	return data;
+}
+
+```
+
+
+
+获取温湿度数据:
+
+```c
+
+/**
+ * @brief 获取温湿度传感器的数据
+* @param data: 存储数组的首地址
+* @return: bool:是否获取成功
+ */
+bool DHT11_GetValue(uint8_t *buf)
+{
+	//1.MCU发送开始信号
+	int cnt = 0;
+	DHT11_Start();
+	
+	//2.判断DHT11是否响应
+	if( DHT11_IsACK() != true )
+	{
+		return false; //获取失败，原因是DHT11未响应
+	}
+	else
+	{
+		//3.循环接收40bit
+		for(;cnt < 5;cnt++)
+		{
+			buf[cnt] = DHT11_ReadByte();
+		}
+		
+		//4.进行数据校验
+		if( buf[0] + buf[1] + buf[2] +buf[3] != buf[4] )
+		{
+			return false; //获取失败，原因是校验失败
+		}
+	}
+	
+	return true;
+}
+
+```
+
+
+
+主函数
+
+```c
+int main(void)
+{
+    uint8_t dhtbuf[5];
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
+	Init_Buzzer();
+	LED_GPIO_Config();
+	UART_Config(115200);
+	UART3_Config(115200);
+	DHT11_Init();
+	
+	delay_s(1);
+	for(;;)
+	{
+		if(DHT11_GetValue(dhtbuf))
+			printf("温度:%d, 相对湿度:%d \r\n", dhtbuf[2], dhtbuf[0]);
+		else
+			printf("获取失败\r\n");
+		delay_s(2);
+	}
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+## 数模转换
+
+一般在电子线路中，信号分为两种：模拟信号 + 数字信号，大多数传感器采集的都是模拟信号，比如温度、湿度、压力....... ，采集的模拟信号再转交给计算机进行处理，计算机处理的是数字信号，其中涉及到模拟量和数字量的转换，会使用模数转换器，也被称为ADC。一般在电子线路中，信号分为两种：模拟信号 + 数字信号，大多数传感器采集的都是模拟信号，比如温度、湿度、压力....... ，采集的模拟信号再转交给计算机进行处理，计算机处理的是数字信号，其中涉及到模拟量和数字量的转换，会使用模数转换器，也被称为ADC。
+
+![image-20241205204935981](img/image-20241205204935981.png)
+
+
+
+![image-20241205102031992](img/image-20241205102031992.png)
+
+
+
+ADC (Analog - Digital - converter) 模数转化
+
+DAC (Digital - Analog - converter) 数模转化
+
+基本概念
+
+![image-20241205205131549](img/image-20241205205131549.png)
+
+
+
+
+
+### AD转化原理:
+
+![image-20241205102516551](img/image-20241205102516551.png)
+
+1.   采样
+2.   将采样的点转化为数字量
+3.   进行编码
+
+
+
+采样: 采样频率越高越好, 最低也要是传感器最大采样频率的2倍
+
+![image-20241205205202602](img/image-20241205205202602.png)
+
+
+
+
+
+量化和编码:
+
+![image-20241205104040606](img/image-20241205104040606.png)
+
+想要提高精度就减小最小单位的值, 这个值越小, 精度越高, 最小取决于你硬件ADC的分辨率, 也就是位数, 位数越多, 可以减小的单位值就越小
+
+
+
+编码就是将采样点的量化后成最小量化单位的整数倍后进行编码
+
+
+
+
+
+### MCU ADC简介
+
+![image-20241205205224943](img/image-20241205205224943.png)
+
+数模转化精度由分辨率来决定
+
+![image-20241205205254997](img/image-20241205205254997.png)
+
+分辨率由位数来决定
+
+#### 框图
+
+![image-20241205205346098](img/image-20241205205346098.png)
+
+$V_{REF+}/V_{REF-}$是参考电压, MCU提供的是0-3.3V, 采用范围的电压只能在这个区间,超过就会失帧
+
+![image-20241205205408683](img/image-20241205205408683.png)
+
+
+
+ADC的时钟方案:
+
+![image-20241205205505929](img/image-20241205205505929.png)
+
+虽然接入的是APB2,有84MHz, 但是系统默认最高频率是30MHz, 所以要选预分频至少为4
+
+
+
+
+
+
+
+
+
+![image-20241205145241473](img/image-20241205145241473.png)
+
+总转换时间= 采样+量化+编码时间
+
+采样时间可以自己选
+
+
+
+
+
+### 摇杆外设
+
+![image-20241205113459105](img/image-20241205113459105.png)
+
+1.   5v口
+2.   Rx和Ry接收
+3.   SW是发送是否有按下
+4.   接地线
+
+
+
+![image-20241205205614133](img/image-20241205205614133.png)
+
+
+
+代码实现:
+
+ADC模块
+
+```c
+/**
+ * @brief 初始化遥感的的ADC配置, PA6对应ADC1/2_6 DCMI PCLK 对应x轴, PA4 对应ADC1/2_4 DCMI HREF 对应y轴
+ * @param AT_Instruction: 要发送的AT指令
+ * @param ms: 每次尝试的超时时间(毫秒)
+ * @return: 0=成功, 1=失败
+ * 
+ * 该函数包含了重试机制和超时处理,可以更可靠地发送AT指令并等待响应
+ */
+
+void ps2_Config(void)
+{
+	ADC_CommonInitTypeDef ADC_CommonInitStructure;
+	
+	// 配置时钟
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA|RCC_AHB1Periph_GPIOE, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1|RCC_APB2Periph_ADC2, ENABLE);
+	// 配置PA5为输入模拟
+	GPIO_InitTypeDef GPIO_InitStructure;
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_4|GPIO_Pin_6;
+	// 在GPIO配置后添加
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;  // 添加速度配置
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AN;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL ;
+	GPIO_Init(GPIOA, &GPIO_InitStructure);	
+	
+	// 配置PE5作为z坐标
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_5;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP ;
+	GPIO_Init(GPIOE, &GPIO_InitStructure);	
+
+	
+	// 配置ADC时钟分频,工作模式, 采用周期
+	ADC_CommonInitStructure.ADC_Mode = ADC_Mode_Independent;
+	ADC_CommonInitStructure.ADC_Prescaler = ADC_Prescaler_Div4; //21MHz
+	ADC_CommonInitStructure.ADC_TwoSamplingDelay = ADC_TwoSamplingDelay_5Cycles;
+	ADC_CommonInit(&ADC_CommonInitStructure);
+
+
+	
+	
+	ADC_InitTypeDef ADC_InitStructure;
+	// 配置ADC初始化
+	ADC_InitStructure.ADC_Resolution = ADC_Resolution_12b;//分辨率12bit
+	ADC_InitStructure.ADC_ScanConvMode = DISABLE;
+	ADC_InitStructure.ADC_ContinuousConvMode = DISABLE; // 不使用连续转换
+	ADC_InitStructure.ADC_ExternalTrigConvEdge = ADC_ExternalTrigConvEdge_None; //禁止外部触发
+	ADC_InitStructure.ADC_DataAlign = ADC_DataAlign_Right;//数据右对齐
+	ADC_InitStructure.ADC_NbrOfConversion = 1;  // 告诉ADC有多少个通道数量要测试
+	ADC_Init(ADC1, &ADC_InitStructure);
+	ADC_Init(ADC2, &ADC_InitStructure);
+	
+	
+	// 配置ADC通道, 告诉ADC我这个通道排在第几位运行, 排位范围:1 -- ADC_NbrOfConversion
+	ADC_RegularChannelConfig(ADC1, ADC_Channel_4, 1, ADC_SampleTime_15Cycles);
+	ADC_RegularChannelConfig(ADC2, ADC_Channel_6, 1, ADC_SampleTime_15Cycles);
+	// 启用 ADC1 
+	ADC_Cmd(ADC1, ENABLE);		
+	ADC_Cmd(ADC2, ENABLE);		
+}
+```
+
+main函数
+
+```c
+int main(void)
+{ 
+	uint16_t adc_val=0;
+	uint16_t x_val, y_val;
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
+	LED_GPIO_Config();
+	UART_Config(115200);
+	UART3_Config(115200);
+//	ADC_Config();
+//	Photoresistor_Config();
+//	TIM14_Config();
+	ps2_Config();
+	for(;;)
+	{
+		// 开启第一次adc转换
+		ADC_SoftwareStartConv(ADC1);
+		ADC_SoftwareStartConv(ADC2);
+		// 等待结束
+		while(ADC_GetFlagStatus(ADC1, ADC_FLAG_EOC) == 0);
+		while(ADC_GetFlagStatus(ADC2, ADC_FLAG_EOC) == 0);
+		// 读取X和y数据
+		x_val = ADC_GetConversionValue(ADC2);
+		y_val = ADC_GetConversionValue(ADC1);
+
+		//printf("X_val:%d, Y_val:%d\r\n", x_val, y_val);
+		
+		if (x_val >= 3600 && (y_val >= 1800 && y_val <= 2200))
+		{
+			printf("Y轴前推\r\n");
+		}
+		// X轴左推
+		if (x_val <= 600 && (y_val >= 1800 && y_val <= 2200))
+		{
+			printf("Y轴后推\r\n");
+		}
+		// Y轴前推
+		if (y_val <= 600 && (x_val >= 1800 && x_val <= 2200))
+		{
+			printf("水平向左\r\n");
+		}
+		// Y轴后推
+		if (y_val >= 3600 && (x_val >= 1800 && x_val <= 2200))
+		{
+			printf("水平向右\r\n");
+		}
+		// 斜向右上推
+		if (x_val >= 3600 && y_val <= 600)
+		{
+			printf("斜向右上推\r\n");
+		}
+		// 斜向右下推
+		if (x_val >= 3600 && y_val >= 3600)
+		{
+			printf("斜向左上推\r\n");
+		}
+		// 斜向左上推
+		if (x_val <= 600 && y_val <= 600)
+		{
+			printf("斜向左下推\r\n");
+		}
+		// 斜向左下推
+		if (x_val <= 600 && y_val >= 3600)
+		{
+			printf("斜向右下推\r\n");
+		}
+		// Z轴按下
+		// Z轴按下检测
+		if(GPIO_ReadInputDataBit(GPIOE, GPIO_Pin_5) == 0)
+		{
+			delay_ms(10);   // 延时10ms消抖
+			if(GPIO_ReadInputDataBit(GPIOE, GPIO_Pin_5) == 0)  // 再次确认按下
+			{
+				printf("遥感按下\r\n");
+				
+				// 等待松手,增加超时保护
+				uint32_t timeout = 0;
+				while(GPIO_ReadInputDataBit(GPIOE, GPIO_Pin_5) == 0)
+				{
+					delay_ms(5);
+					timeout++;
+					if(timeout > 1000)  // 5s超时保护
+					{
+						break;  // 超时退出
+					}
+				}
+				printf("遥感释放\r\n");
+			}
+		}
+
+		delay_ms(200);
+    }
+}
+```
+
+
+
+
+
+
+
+### ADC滤波算法
+
+1.   算数平均滤波
+2.   中位值滤波
+3.   递推平均滤波
+4.   中位值平均滤波
+5.   加权递推平均滤波
+6.   一阶互补滤波
+
+
+
+算术平均滤波:
+
+算术平均滤波 这是最基本的滤波方法。它通过对连续采样的n个数据进行平均来得到最终结果。假设我们连续采样了100个数据点,那么最终输出就是这100个点的平均值。这种方法可以有效降低随机噪声的影响,但计算量较大,而且对于快速变化的信号可能会造成较大延迟。
+
+```c
+// 算术平均滤波
+// samples: 输入的采样数据数组
+// window_size: 滑动窗口大小
+// result: 输出结果数组
+// length: 输入数据长度
+void arithmetic_mean_filter(float *samples, int window_size, float *result, int length) {
+    for (int i = 0; i <= length - window_size; i++) {
+        float sum = 0;
+        // 计算窗口内的样本和
+        for (int j = 0; j < window_size; j++) {
+            sum += samples[i + j];
+        }
+        // 计算平均值
+        result[i] = sum / window_size;
+    }
+}
+```
+
+
+
+
+
+中值滤波:
+
+中位值滤波 这种方法特别适合去除脉冲噪声。它将n个采样值按大小排序,然后选择中间值作为输出。比如在5个采样值[2,1,50,3,2]中,排序后变成[1,2,2,3,50],选择中间值2作为输出。这种方法对于去除偶然的异常值特别有效。
+
+```c
+// 中位值滤波
+// 使用冒泡排序来找到中位数
+void median_filter(float *samples, int window_size, float *result, int length) {
+    float window[MAX_WINDOW_SIZE];
+    
+    for (int i = 0; i <= length - window_size; i++) {
+        // 复制当前窗口数据
+        for (int j = 0; j < window_size; j++) {
+            window[j] = samples[i + j];
+        }
+        
+        // 冒泡排序
+        for (int j = 0; j < window_size - 1; j++) {
+            for (int k = 0; k < window_size - 1 - j; k++) {
+                if (window[k] > window[k + 1]) {
+                    float temp = window[k];
+                    window[k] = window[k + 1];
+                    window[k + 1] = temp;
+                }
+            }
+        }
+        
+        // 取中位数
+        result[i] = window[window_size / 2];
+    }
+}
+```
+
+
+
+
+
+
+
+递推平均滤波:
+
+递推平均滤波 这种方法是算术平均的改进版本,它不需要存储所有历史数据。每次新的采样值来到时,都用这个公式更新: 新平均值 = (前一次平均值 * (n-1) + 新采样值) / n 这种方法内存占用小,计算量也较小,但可能会产生相位延迟。
+
+```c
+// 递推平均滤波
+// alpha: 平滑系数(0-1),值越大表示新数据权重越大
+void recursive_mean_filter(float *samples, float alpha, float *result, int length) {
+    result[0] = samples[0];  // 初始值
+    
+    for (int i = 1; i < length; i++) {
+        // 新值 = alpha * 当前样本 + (1-alpha) * 上一次结果
+        result[i] = alpha * samples[i] + (1 - alpha) * result[i-1];
+    }
+}
+```
+
+
+
+
+
+中值平均滤波
+
+中位值平均滤波 这是中位值滤波和平均滤波的组合。首先用中位值滤波去除异常值,然后对剩余的值进行算术平均。这种方法既能去除脉冲噪声,又能平滑随机波动。
+
+```c
+// 中位值平均滤波
+// 先进行中位值滤波去除异常值,然后对剩余值求平均
+void median_mean_filter(float *samples, int window_size, float *result, int length) {
+    float window[MAX_WINDOW_SIZE];
+    
+    for (int i = 0; i <= length - window_size; i++) {
+        // 复制窗口数据
+        for (int j = 0; j < window_size; j++) {
+            window[j] = samples[i + j];
+        }
+        
+        // 排序
+        for (int j = 0; j < window_size - 1; j++) {
+            for (int k = 0; k < window_size - 1 - j; k++) {
+                if (window[k] > window[k + 1]) {
+                    float temp = window[k];
+                    window[k] = window[k + 1];
+                    window[k + 1] = temp;
+                }
+            }
+        }
+        
+        // 去除最大值和最小值后求平均
+        float sum = 0;
+        for (int j = 1; j < window_size - 1; j++) {
+            sum += window[j];
+        }
+        result[i] = sum / (window_size - 2);
+    }
+}
+
+```
+
+
+
+
+
+
+
+加权递推平均滤波
+
+加权递推平均滤波 这是递推平均滤波的升级版,给不同时刻的数据赋予不同的权重。通常最新的数据具有最大的权重,较早的数据权重较小。这样可以更好地跟踪信号的变化。
+
+```c
+// 加权递推平均滤波
+// weights: 权重数组
+// weight_size: 权重数组大小
+void weighted_recursive_filter(float *samples, float *weights, int weight_size, 
+                             float *result, int length) {
+    float weight_sum = 0;
+    // 计算权重和
+    for (int i = 0; i < weight_size; i++) {
+        weight_sum += weights[i];
+    }
+    
+    for (int i = 0; i < length; i++) {
+        float sum = 0;
+        int start = (i >= weight_size) ? i - weight_size + 1 : 0;
+        int w_start = (i >= weight_size) ? 0 : weight_size - 1 - i;
+        
+        // 计算加权和
+        for (int j = start, w = w_start; j <= i; j++, w++) {
+            sum += samples[j] * weights[w];
+        }
+        
+        result[i] = sum / weight_sum;
+    }
+}
+```
+
+
+
+
+
+一阶互补滤波
+
+一阶互补滤波 这种滤波器通常用于传感器融合,比如加速度计和陀螺仪的数据融合。它结合了高通滤波和低通滤波的特点,可以降低高频噪声同时保持对信号变化的快速响应。
+
+```c
+// 一阶互补滤波
+// dt: 采样时间间隔
+// alpha: 互补滤波系数(0-1)
+void complementary_filter(float *acc_data, float *gyro_data, float dt, float alpha,
+                         float *result, int length) {
+    result[0] = acc_data[0];  // 初始角度等于加速度计的值
+    
+    for (int i = 1; i < length; i++) {
+        // 陀螺仪数据积分
+        float gyro_angle = result[i-1] + gyro_data[i] * dt;
+        // 加速度计数据
+        float acc_angle = acc_data[i];
+        // 互补滤波
+        result[i] = alpha * acc_angle + (1 - alpha) * gyro_angle;
+    }
+}
+
+```
+
+
+
+
+
+
+
+
+
+## 看门狗
+
+![image-20241206143435445](img/image-20241206143435445.png)
+
+看门狗本质就是一个递减计数器, 我们要做的的是防止这个计数器变为0,  当计数器的值低于ARR时就可以喂狗,  如果没有及时喂狗, 看门狗就会给MCU复位电路发送复位信号, 这时候MCU就会自动复位
+
+
+
+
+
+### 独立看门狗
+
+
+
+![image-20241206143823379](img/image-20241206143823379.png)
+
+之所以用专用的LSI时钟驱动, 是因为如果MCU主时钟出事了LSI还能用,这个时候还能及时复位
+
+看门狗计数器有12bit, 总共可以计数4096个数
+
+
+
+![image-20241206153356566](img/image-20241206153356566.png)
+
+启动: 对IWDG_KR, 写入0xCCCC后就会启动看门狗
+
+喂狗: 将关键字0xAAAA写入IWWDG_KR中, 这时候IWDG_RLR的值就会被重载到计数器中,避免看门狗复位
+
+寄存器访问保护:为了防止出现寄存器写入时被干扰, 我们在写的时候必须先将IWDG_KR寄存器写入0x5555时, 才能修改其他寄存器的值, 这样可以防止寄存器出现写入干扰,里面的值变成了其他的值。先要人为使能KR寄存器,即写入0x5555, 才能使修改成功
+
+
+
+这种喂狗方式要在代码穿插执行喂狗,及其麻烦, 可以使用定时器来喂狗, 要注意的是喂狗的优先级必须是要最高的
+
+![image-20241206163742864](img/image-20241206163742864.png)
+
+#### 代码:
+
+思想:
+
+1.   初始化看门狗
+2.   程序执行完后就计数加一
+3.   每1s触发一次定时器中断,用来定时喂狗
+
+
+
+看门狗初始化代码
+
+```c
+#include "./IWDG/iwdg.h"
+
+
+void IWDG_Config(void)
+{
+	// 解除写保护
+	IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
+	
+	// 开始分频, 1khz, 1ms周期
+	IWDG_SetPrescaler(IWDG_Prescaler_32);
+
+	// 重载值设置, 我要1200ms之内喂狗
+	IWDG_SetReload(1000-1);
+	
+	// 先喂狗, 防止一激活就复位
+	IWDG_ReloadCounter();
+	// 激活看门狗
+	IWDG_Enable();
+}
+
+```
+
+
+
+主函数
+
+```c
+/**
+  ******************************************************************************
+  * @file    main.c 
+  * @author  苏向标
+  * @version V1.0.0
+  * @date    2024/11/20
+  * @brief   程序主函数
+  ******************************************************************************
+  * 发光二极管具有单向导电性, 并且利用PF9/PF10来控制LED点亮
+  * None
+  ******************************************************************************
+  */
+
+/* Includes ----------------定义头文件---------------------------------------*/
+
+#include "stm32f4xx.h"
+#include "LED.h"
+#include "./KEY/key.h"
+#include "./BUZZER/buzzer.h"
+#include "Delay.h" 
+#include "./USART/uart.h"
+#include "./IWDG/iwdg.h"
+#include "./TIM/tim.h"
+#include <stdio.h>
+/** @addtogroup Template_Project
+  * @{
+  */ 
+
+/* Private typedef --------------------------定义类型----------------------------*/
+/* Private define ---------------------------定义声明----------------------------*/
+/* Private macro ----------------------------宏定义------------------------------*/
+/* Private variables ------------------------定义变量----------------------------*/
+/* Private function prototypes --------------函数声明----------------------------*/
+/* Private functions ------------------------定义函数----------------------------*/
+
+/**
+  * @brief  Main program
+  * @param  None
+  * @retval None
+  */
+
+ 
+struct __FILE { int handle; /* Add whatever you need here */ };
+FILE __stdout;
+FILE __stdin;
+
+//对fputc函数进行重定向，重定向UART1
+int fputc(int ch, FILE *f) 
+{
+	USART_SendData(USART1,ch); //把数据通过UART1转发出去
+	while( USART_GetFlagStatus(USART1,USART_FLAG_TXE) == RESET);  //为了等待该字节发送完成	
+	return ch;
+}
+void _sys_exit(int return_code) 
+{
+
+}
+
+
+
+
+
+
+int main(void)
+{
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
+	UART_Config(115200);
+	TIM14_Config();
+	if(RCC_GetFlagStatus(RCC_FLAG_IWDGRST) != RESET)
+	{
+		printf("MCU Reset By IWDG\r\n");
+		// 清楚复位标志
+		RCC_ClearFlag();
+	}
+	else
+	{
+		printf("MCU Reset By USER\r\n");
+	}
+	
+	IWDG_Config();
+	for(;;)
+	{
+		delay_ms(200);
+		program_cnt++;
+	}
+}
+  
+
+```
+
+
+
+定时器函数:
+
+```c
+#include "./TIM/tim.h"
+#include <stdio.h>
+int program_cnt = 0;
+
+void TIM14_Config(void)
+{
+    // 时钟使能
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM14, ENABLE);
+    
+    // 定时器基本配置
+    TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+	// 1s喂一次狗
+    TIM_TimeBaseStructure.TIM_Period = 10000-1;
+    TIM_TimeBaseStructure.TIM_Prescaler = 8400-1;
+    TIM_TimeBaseStructure.TIM_ClockDivision = 0;
+    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+    TIM_TimeBaseInit(TIM14, &TIM_TimeBaseStructure);
+    
+    
+    // 配置 NVIC
+    NVIC_InitTypeDef NVIC_InitStructure;
+    NVIC_InitStructure.NVIC_IRQChannel = TIM8_TRG_COM_TIM14_IRQn;  // 定时器对应的中断通道
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+    // 如果需要中断
+    TIM_ITConfig(TIM14, TIM_IT_Update, ENABLE);
+
+    // 启动定时器
+    TIM_Cmd(TIM14, ENABLE);
+}
+
+void TIM8_TRG_COM_TIM14_IRQHandler(void)
+{
+	if(TIM_GetITStatus(TIM14, TIM_IT_Update) != RESET)
+	{
+		// 清楚中断标志位
+        TIM_ClearITPendingBit(TIM14, TIM_IT_Update);
+		// 定时喂狗
+		IWDG_ReloadCounter();
+		printf("程序已经执行%d次\r\n", program_cnt);
+
+	}
+}
+```
+
+
+
+
+
+
+
+
+
+### 窗口看门狗
+
+![image-20241206144802974](img/image-20241206144802974.png)
+
+系统时钟是接APB1, 复位前触发中断,然后复位, 死前说遗言, 也可以在中断的时候喂狗, 起死回生
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## RTC时钟
+
+RTC被称为实时时钟(Real Time Clock)，是属于MCU内部的一款外设，当然，用户也可以选择购买RTC芯片，RTC外设主要用于进行时间的计算，一般常用于消费类电子产品上面，比如智能手环、智能台灯......
+
+![image-20241211091038846](img/image-20241211091038846.png)
+
+### 特点
+
+![image-20241211091050078](img/image-20241211091050078.png)
+
+1.  RTC是一个独立的BCD定时器, 使用的是BCD码
+2.  内部时钟用的是1Hz的时钟源
+
+
+
+
+
+### 框图
+
+![image-20241211091212127](img/image-20241211091212127.png)
+
+![image-20241211091416278](img/image-20241211091416278.png)
+
+
+
+使用外部低速时钟, 32.768KHz, 经过一个7位预分频和15位预分频, 默认128和256, 经过后就变成1Hz的时钟源了, 1s计时一次, 传入RTC_WUTR的时钟源就是1KHZ, RTC_WUTR就是递减计数器, 到0触发中断,通过这种方式来进行计时
+
+
+
+
+
+### RTC初始化
+
+![image-20241211091758618](img/image-20241211091758618.png)
+
+1.   打开PWR电源
+2.   将PWR中的DBP位置1
+3.   对RTC_WPR进行解锁, 写入0xCA和0x53
+4.   就可以初始化RTC其他寄存器了
+
+
+
+
+
+
+
+
+
+
+
+
+
+## 内部Flash
+
+
+
+### 背景说明
+
+程序是由指令＋数据组成的, 一般产品都会把程序进行固化,一般是选择把程序或者固件存储到(固化到)非易失性存储设备如Flash, 因为Flash工艺简单, 成本低, 容量大
+
+
+
+### 概念
+
+存储器指的是若干个存储单元集合,每个存储单元(1字节)都可以存储8bit二进制数, 为了方便存储, 就为每个存储单元分配了地址, 就可以通过寻址来找到存储单元。
+
+
+
+存储类型:
+
+按存储方式可以分为两种:
+
+1.   ROM(只读存储器), 掉电不丢失
+2.   RAM(随机访问存储器)
+
+按失电是否会丢失可分为:
+
+1.   易失性存储设备
+2.   非易失性存储设备
+
+
+
+
+
+ROM: 只读存储器
+
+PROM: 可编程存储器(通常只能放入一次),通过电流熔断机制写入, 只能写入一次, 因为一旦写入,熔丝就会断掉,无法再写入了, PROM出厂时, 默认全部高电平, 熔断了就是0
+
+![image-20241210104051059](img/image-20241210104051059.png)
+
+
+
+EPROM: 可擦除可编程存储器(需要紫外线擦除)
+
+EEPROM: 读作$E^2PROM$电可擦除可编程存储器(工艺复杂, 存储容量小,价格高, 但是擦除方便, 数据存储可超过100年)            
+
+FLASH: 快闪存储器, 简称闪存, 制作工业比EEPROM简单, 成本低,但是数据存储比EEPROM短, 写入之前必须要先擦除
+
+
+
+
+
+STM32F407ZET6的Flash
+
+![image-20241210105808264](img/image-20241210105808264.png)
+
+基本起始地址都是0x0800 0000
+
+
+
+寻址范围是:0x0800 0000 ~ 0x0807 FFFF。
+
+
+
+### 32中的FLASH
+
+![image-20241210210457765](img/image-20241210210457765.png)
+
+FLASH想要执行写操作必须要先解锁,依次往寄存器中写入key1和key2,就可以解锁, 输错了就要复位才能重新输入密码
+
+
+
+![image-20241210210521377](img/image-20241210210521377.png)![image-20241210210645179](img/image-20241210210645179.png)
+
+
+
+
+
+
+
+#### 编程
+
+![image-20241210210823528](img/image-20241210210823528.png)
+
+>   [!NOTE]
+>
+>   Flash在被擦除后, 默认为1, 所以1写0是不需要擦除的, 0写1就需要重新擦除
+
+
+
+
+
+#### 练习
+
+练习：利用ESP8266获取当前的北京时间，要求每隔10s获取一次室内的温湿度数据，要求把获取的温湿度数据以及获取数据的时间构造为格式化字符串
+
+ 
+
+字符串格式 ” 2024-12-10 15:25:30  temp=25#humi=40\r\n”  提示：利用sprintf()实现即可！
+
+ 
+
+要求把字符串存储到MCU内部的Flash的某个扇区中（尽量使用靠后的扇区），要求MCU内部的温湿度数据的上限100条，如果达到上限，则通过串口输出“内存已满”。
+
+ 
+
+要求利用按键实现刷新，利用KEY0进行数据显示，当按下KEY0后，则把扇区中所有的温湿度记录输出到PC端，当按下KEY3之后，则把扇区中所有温湿度记录清空。
+
+
+
+main函数:
+
+```c
+#include "stm32f4xx.h"
+#include "LED.h"
+#include "./KEY/key.h"
+#include "./BUZZER/buzzer.h"
+#include "Delay.h" 
+#include "./USART/uart.h"
+#include "./RTC/rtc.h"
+#include "./WIFI/wifi.h"
+#include "./FLASH/flash.h"
+#include "./DHT11/dht11.h"
+#include "./TIM/tim.h"
+
+//#include "./TIM/tim.h"
+#include <stdio.h>
+
+/** @addtogroup Template_Project
+  * @{
+  */ 
+
+/* Private typedef --------------------------定义类型----------------------------*/
+/* Private define ---------------------------定义声明----------------------------*/
+/* Private macro ----------------------------宏定义------------------------------*/
+#define DOMAIN "bemfa.com"
+#define PORT "8344"
+#define TOPIC "LED002,BEEP002"
+#define SSID "sxb"
+#define PASSWORD "123456789"
+#define UID "3f347ad0bdb04adf9c7f4a12a6df0687"
+/* Private variables ------------------------定义变量----------------------------*/
+/* Private function prototypes --------------函数声明----------------------------*/
+/* Private functions ------------------------定义函数----------------------------*/
+
+/**
+  * @brief  Main program
+  * @param  None
+  * @retval None
+  */
+
+ 
+struct __FILE { int handle; /* Add whatever you need here */ };
+FILE __stdout;
+FILE __stdin;
+
+//对fputc函数进行重定向，重定向UART1
+int fputc(int ch, FILE *f) 
+{
+	USART_SendData(USART1,ch); //把数据通过UART1转发出去
+	while( USART_GetFlagStatus(USART1,USART_FLAG_TXE) == RESET);  //为了等待该字节发送完成	
+	return ch;
+}
+void _sys_exit(int return_code) 
+{
+	
+}
+
+
+
+
+
+
+int main(void)
+{
+	uint8_t dhtbuf[5];
+	char current_time[128];
+	char time_DHT11[256];
+	
+	//从扇区6开始写入
+	uint32_t uwStartSector = ADDR_FLASH_SECTOR_6;
+	uint32_t uwEndSector = ADDR_FLASH_SECTOR_8;
+	uint32_t uwAddress = ADDR_FLASH_SECTOR_6;
+	
+    // 系统初始化配置...
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
+    UART_Config(115200);
+	UART3_Config(115200);
+	ESP8266_SetupConnection(SSID, PASSWORD, DOMAIN, PORT, TOPIC);
+	// 初始化温湿度传感器
+	DHT11_Init();
+	// 初始化按钮
+	Key_ALL_Config();
+	// 初始化定时器
+	TIM14_Config();
+	// 清空flash
+	ClearFlashExceptFlag();
+	MCU_Flash_EarseSector(FLASH_Sector_6);
+	MCU_Flash_EarseSector(FLASH_Sector_7);
+	
+	for(;;)
+	{
+		if(write_flag == 1)
+		{
+			write_flag = 0;
+			// 获取温湿度
+			DHT11_GetValue(dhtbuf);
+
+			
+			// 获取时间
+			if(ESP8266_GetTime(UID) == true)
+			{
+				//printf("%s\r\n", uart3_buf);
+				uart3_buf[uart3_count] = '\0';
+				strcpy(current_time, (char *)uart3_buf);
+				//printf("%s\r\n", current_time);
+				
+				memset((char *)uart3_buf, 0, sizeof(uart3_buf));
+				uart3_count=0;
+				uart3_flag = 0;
+				gettime_flag=0;
+				//uart3_flag=0;
+				
+			}
+			else
+			{
+				printf("获取失败\r\n");
+			}
+			
+			// 封装字符串
+			snprintf(time_DHT11, 255, "%s %d#%d\r\n", current_time, dhtbuf[2], dhtbuf[0]);
+			// printf("%s\r\n", time_DHT11);	
+			
+			// 写入flash中
+			uwAddress = Write_str_in_Flash(uwAddress, time_DHT11, strlen(time_DHT11));
+			
+			
+		}
+		
+		if (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_0) == 0) // 按键按下，PA0 为低电平
+		{
+			delay_ms(10);
+			if (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_0) == 0) // 再次确认按键仍然按下
+			{
+				// 打印FLASH的内容
+				PrintFlashContent(uwStartSector, uwAddress);
+				while (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_0) == 0); // 等待按键释放
+			}
+		}
+
+		if (GPIO_ReadInputDataBit(GPIOE, GPIO_Pin_2) == 0) // 按键按下，PA0 为低电平
+		{
+			delay_ms(10);
+			if (GPIO_ReadInputDataBit(GPIOE, GPIO_Pin_2) == 0) // 再次确认按键仍然按下
+			{
+				// 清楚扇区内容
+				MCU_Flash_EarseSector(FLASH_Sector_6);
+				MCU_Flash_EarseSector(FLASH_Sector_7);
+				uwAddress = uwStartSector;
+				while (GPIO_ReadInputDataBit(GPIOE, GPIO_Pin_2) == 0); // 等待按键释放
+			}
+		}
+
+	}
+
+}
+```
+
+
+
+
+
+flash函数:
+
+头文件:
+
+```c
+#ifndef __FLASH_H
+#define __FLASH_H
+
+#include "stm32f4xx.h"
+#include <stdio.h>
+#include <stdbool.h>
+/* Base address of the Flash sectors */ 
+#define ADDR_FLASH_SECTOR_0     ((uint32_t)0x08000000) /* Base address of Sector 0, 16 Kbytes   */
+#define ADDR_FLASH_SECTOR_1     ((uint32_t)0x08004000) /* Base address of Sector 1, 16 Kbytes   */
+#define ADDR_FLASH_SECTOR_2     ((uint32_t)0x08008000) /* Base address of Sector 2, 16 Kbytes   */
+#define ADDR_FLASH_SECTOR_3     ((uint32_t)0x0800C000) /* Base address of Sector 3, 16 Kbytes   */
+#define ADDR_FLASH_SECTOR_4     ((uint32_t)0x08010000) /* Base address of Sector 4, 64 Kbytes   */
+#define ADDR_FLASH_SECTOR_5     ((uint32_t)0x08020000) /* Base address of Sector 5, 128 Kbytes  */
+#define ADDR_FLASH_SECTOR_6     ((uint32_t)0x08040000) /* Base address of Sector 6, 128 Kbytes  */
+#define ADDR_FLASH_SECTOR_7     ((uint32_t)0x08060000) /* Base address of Sector 7, 128 Kbytes  */
+#define ADDR_FLASH_SECTOR_8     ((uint32_t)0x08080000) /* Base address of Sector 8, 128 Kbytes  */
+void ClearFlashExceptFlag(void);
+uint32_t GetSector(uint32_t Address);
+uint32_t Write_str_in_Flash(uint32_t uwAddress, char *str, uint32_t buf_len);
+void PrintFlashContent(uint32_t startAddress, uint32_t endAddress);
+bool MCU_Flash_EarseSector(uint32_t FLASH_Sector);
+#endif
+
+```
+
+
+
+c文件
+
+```c
+#include "./FLASH/flash.h"
+
+
+// 获取扇区的地址
+uint32_t GetSector(uint32_t Address)
+{
+  uint32_t sector = 0;
+  
+  if((Address < ADDR_FLASH_SECTOR_1) && (Address >= ADDR_FLASH_SECTOR_0))
+  {
+	sector = FLASH_Sector_0;  
+  }
+  else if((Address < ADDR_FLASH_SECTOR_2) && (Address >= ADDR_FLASH_SECTOR_1))
+  {
+    sector = FLASH_Sector_1;  
+  }
+  else if((Address < ADDR_FLASH_SECTOR_3) && (Address >= ADDR_FLASH_SECTOR_2))
+  {
+    sector = FLASH_Sector_2;  
+  }
+  else if((Address < ADDR_FLASH_SECTOR_4) && (Address >= ADDR_FLASH_SECTOR_3))
+  {
+    sector = FLASH_Sector_3;  
+  }
+  else if((Address < ADDR_FLASH_SECTOR_5) && (Address >= ADDR_FLASH_SECTOR_4))
+  {
+    sector = FLASH_Sector_4;  
+  }
+  else if((Address < ADDR_FLASH_SECTOR_6) && (Address >= ADDR_FLASH_SECTOR_5))
+  {
+    sector = FLASH_Sector_5;  
+  }
+  else if((Address < ADDR_FLASH_SECTOR_7) && (Address >= ADDR_FLASH_SECTOR_6))
+  {
+    sector = FLASH_Sector_6;  
+  }
+  else if((Address < ADDR_FLASH_SECTOR_8) && (Address >= ADDR_FLASH_SECTOR_7))
+  {
+    sector = FLASH_Sector_7;  
+  }
+}
+
+void ClearFlashExceptFlag(void)
+{
+	FLASH_ClearFlag(FLASH_FLAG_EOP | FLASH_FLAG_OPERR | FLASH_FLAG_WRPERR | 
+			  FLASH_FLAG_PGAERR | FLASH_FLAG_PGPERR|FLASH_FLAG_PGSERR); 
+}
+
+
+
+
+uint32_t Write_str_in_Flash(uint32_t uwAddress, char *str, uint32_t buf_len)
+{
+    FLASH_Unlock();
+	while(buf_len--)
+	{
+		FLASH_ProgramByte(uwAddress, *(str++));
+		uwAddress++;
+	}
+    FLASH_Lock();
+    return uwAddress;
+}
+
+
+void PrintFlashContent(uint32_t startAddress, uint32_t endAddress)
+{
+    uint32_t address;
+    uint32_t word_data;
+    char *p_char;
+    for(address = startAddress; address < endAddress; address += 1)
+    {
+        word_data = *((uint8_t*)address);
+        printf("%c", word_data);
+    }
+    printf("\r\n");
+}
+
+
+// 0-7
+bool MCU_Flash_EarseSector(uint32_t FLASH_Sector)
+{
+	FLASH_Unlock();
+	// 添加等待BSY=0的动作
+	//if()
+	while(FLASH_EraseSector(FLASH_Sector, VoltageRange_3) != FLASH_COMPLETE);
+	FLASH_Lock();
+	return true;
+}
+
+```
+
+
+
+
+
+### 扩展
+
+平时会把固件通过下载到MCU内部的Flash中, 一般是从Flash的扇区0开始存储固件。如果需要更新的话通常会设计到一种OTA技术
+
+
+
+OTA: over the air 空中下载技术, 我们将.bin文件上传到服务器, 然后通过ESP8266联网和云服务器通信, 把新固件下载到flash固件中
+
+
+
+.hex文件: 属于可执行文件, 但除了指令和数据外还包含了程序调试信息和函数地址, 这种适合用下载器的时候使用
+
+OTA中通常是用.bin的文件, .bin的文件: 只包含指令和数据,不包含调试信息和函数地址, 这种时候OTA的时候下载
+
+![image-20241211095454386](img/image-20241211095454386.png)
+
+
+
+
+
+
 
