@@ -4776,3 +4776,1543 @@ OTA中通常是用.bin的文件, .bin的文件: 只包含指令和数据,不包�
 
 
 
+
+
+
+
+
+
+
+
+## SPI
+
+### 简介
+
+串行外设接口（Serial Peripheral Interface）的简称也叫做SPI，是一种高速的、全双工同步通信的一种接口，串行外设接口一般是需要4根线来进行通信（NSS、MISO、MOSI、SCK），但是如果打算实现单向通信（最少3根线，NSS、MOSI、SCK），就可以利用这种机制实现一对多或者一对一的通信。
+
+
+
+![image-20241212184512978](img/image-20241212184512978.png)
+
+通过CS来选择从设备, 然后每一个时钟周期,也就是一个脉冲双方同时交换一次数据
+
+
+
+
+
+### SPI的时序图:
+
+![image-20241212184831709](img/image-20241212184831709.png)
+
+
+
+四种模式需要熟记!
+
+MCU作为主机可以选择四种工作模式中的任何一种，但是选择工作模式的时候要以从机支持的模式为主，从机支持的工作模式必须要阅读从机的数据手册（***\*大多数都是支持模式0\****）。 
+
+另外，主机与从机在通信的过程中传输的数据时以bit为单位（串行传输），所以数据格式就十分重要，主机的数据格式必须要根据从机的数据格式进行设置（MSB或者LSB），大多数使用SPI接口通信的传感器一般都是使用MSB高位先出。
+
+
+
+
+
+
+
+### SPI_Flash简介
+
+闪存:
+
+由于STM32F407ZET6这颗MCU内部只有512KB的Flash闪存容量，这512KB需要用于存储固件，剩余的空间可能不足以让用户使用了，所以需要额外的拓展存储IC，在GEC-M4开发板中集成了一颗串行Flash芯片，型号是W25Q128，容量是128Mbit，该存储IC采用SPI接口进行通信。
+
+![image-20241212184020592](img/image-20241212184020592.png)
+
+![image-20241212184017965](img/image-20241212184017965.png)
+
+#### 内存寻址方式
+
+![image-20241212184046453](img/image-20241212184046453.png)
+
+共有255个块, 每个块16个扇区, 每个扇区16个页, 每个页255个字节
+
+地址表示:0x123456
+
+12: 这两个位的位置表示, 第几块
+
+3:这个位表示第几个扇区
+
+4:这个位表示这个扇区第几页
+
+56:表示这个页的第几个字节
+
+
+
+![image-20241212184444861](img/image-20241212184444861.png)
+
+
+
+#### 工作模式:
+
+![image-20241212185018444](img/image-20241212185018444.png)
+
+支持0和3两种模式
+
+
+
+
+
+指令分析
+
+![image-20241212185041637](img/image-20241212185041637.png)
+
+写使能
+
+![image-20241212185050663](img/image-20241212185050663.png)
+
+读取寄存器
+
+![image-20241212185104677](img/image-20241212185104677.png)
+
+写失能:
+
+![image-20241212185111446](img/image-20241212185111446.png)
+
+擦除扇区
+
+![image-20241212185118719](img/image-20241212185118719.png)
+
+读取数据
+
+![image-20241212185125340](img/image-20241212185125340.png)
+
+
+
+具体的看指令手册
+
+
+
+
+
+#### 练习
+
+作业：阅读W25Q128的数据手册，掌握页编程指令、读取数据指令的时序分析，并完成对应的程序设计，要求把获取的温湿度数据每隔10s写入串行falsh芯片的某个扇区中！
+
+
+
+代码:
+
+```c
+#include "./SPI/W25Q128.h"
+
+
+/**
+  * @brief  初始化W25Q128存储IC的引脚
+  * @param  None
+  * @retval None
+  *********************************************************************************
+  *  CS引脚是PB14  MOSI的引脚是PB5  MISO的引脚是PB4  SCK的引脚是PB3
+  *********************************************************************************
+  */
+void W25Q128_Config(void)
+{
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	//打开SPI1的时钟
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_SPI1, ENABLE);
+
+	//打开GPIO的时钟
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB,ENABLE);
+
+
+	//把SCK、MISO、MOSI的引脚进行复用 
+	GPIO_PinAFConfig(GPIOB, GPIO_PinSource3, GPIO_AF_SPI1);
+	GPIO_PinAFConfig(GPIOB, GPIO_PinSource4, GPIO_AF_SPI1);
+	GPIO_PinAFConfig(GPIOB, GPIO_PinSource5, GPIO_AF_SPI1);
+
+	GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_DOWN;
+		
+	/*!< SPI SCK pin configuration */
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3;
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	/*!< SPI MOSI pin configuration */
+	GPIO_InitStructure.GPIO_Pin =  GPIO_Pin_5;
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	/*!< SPI MISO pin configuration */
+	GPIO_InitStructure.GPIO_Pin =  GPIO_Pin_4;
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	//配置CS引脚为推挽输出
+	GPIO_InitStructure.GPIO_Pin 	= GPIO_Pin_14;
+	GPIO_InitStructure.GPIO_Mode 	= GPIO_Mode_OUT;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_PuPd 	= GPIO_PuPd_NOPULL;
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+}
+
+
+/**
+  * @brief  初始化W25Q128
+  * @param  None
+  * @retval None
+  */
+void W25Q128_Init(void)
+{
+	SPI_InitTypeDef  SPI_InitStructure;
+
+	//初始化GPIO
+	W25Q128_Config();
+
+	//拉高片选，默认处于空闲状态
+	sFLASH_CS_HIGH();
+
+	//配置SPI的参数
+	SPI_InitStructure.SPI_Direction = SPI_Direction_2Lines_FullDuplex;		//全双工
+	SPI_InitStructure.SPI_Mode = SPI_Mode_Master;							//主模式
+	SPI_InitStructure.SPI_DataSize = SPI_DataSize_8b;						//数据位
+	SPI_InitStructure.SPI_CPOL = SPI_CPOL_Low;								//低电平
+	SPI_InitStructure.SPI_CPHA = SPI_CPHA_1Edge;							//一边沿
+	SPI_InitStructure.SPI_NSS = SPI_NSS_Soft;								//软控制
+	SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_4;		//预分频
+	SPI_InitStructure.SPI_FirstBit = SPI_FirstBit_MSB;						//高位先出
+	
+	SPI_Init(SPI1, &SPI_InitStructure);
+
+	//启动SPI
+	SPI_Cmd(SPI1, ENABLE);
+}
+
+
+/**
+  * @brief  利用SPI接口的移位寄存器发送字节，但是会同时收到一个字节
+  *         from the SPI bus.
+  * @param  byte: byte to send.
+  * @retval The value of the received byte.
+  */
+uint8_t sFLASH_SendByte(uint8_t byte)
+{
+  //先等待移位寄存器为空
+  while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET);
+
+  //把待发送的字节写入到移位寄存器
+  SPI_I2S_SendData(SPI1, byte);
+
+  //等待接收字节完成
+  while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET);
+
+  //把移位寄存器的数据读取并返回
+  return SPI_I2S_ReceiveData(SPI1);
+}
+
+
+
+/**
+  * @brief  写使能
+  * @param  None
+  * @retval None
+  */
+void sFLASH_WriteEnable(void)
+{
+  //拉低片选
+  sFLASH_CS_LOW();
+
+  /*!< Send "Write Enable" instruction */
+  sFLASH_SendByte(0x06);
+
+  //拉高片选
+  sFLASH_CS_HIGH();
+}
+
+
+/**
+  * @brief  写失能
+  * @param  None
+  * @retval None
+  */
+void sFLASH_WriteDisnable(void)
+{
+  //拉低片选
+  sFLASH_CS_LOW();
+
+  //发送指令
+  sFLASH_SendByte(0x04);
+
+  //拉高片选
+  sFLASH_CS_HIGH();
+}
+
+/**
+  * @brief  
+  *         循环判断状态寄存器是否输出busy状态
+  * @param  None
+  * @retval None
+  */
+void sFLASH_WaitForWriteEnd(void)
+{
+	uint8_t flashstatus = 0;
+
+	//拉低片选
+	sFLASH_CS_LOW();
+
+	//发送指令
+	sFLASH_SendByte(0x05);
+
+	//循环查询
+	do
+	{
+
+		//提供脉冲
+		flashstatus = sFLASH_SendByte(0xFF);
+
+	}
+	while ((flashstatus & 0x01) == SET); /* Write in progress */
+
+	//拉高片选
+	sFLASH_CS_HIGH();
+}
+
+
+/**
+  * @brief  扇区擦除
+  * @param  SectorAddr: address of the sector to erase.
+  * @retval None
+  */
+void sFLASH_EraseSector(uint32_t SectorAddr)
+{
+	//写使能
+	sFLASH_WriteEnable();
+
+	//拉低片选
+	sFLASH_CS_LOW();
+  
+	//发送指令
+	sFLASH_SendByte(0x20);
+	
+	//发送地址
+	sFLASH_SendByte((SectorAddr & 0xFF0000) >> 16);
+	sFLASH_SendByte((SectorAddr & 0xFF00) >> 8);
+	sFLASH_SendByte(SectorAddr & 0xFF);
+	
+	//拉高片选
+	sFLASH_CS_HIGH();
+
+	//等待擦除完成
+	sFLASH_WaitForWriteEnd();
+	
+	//写失能
+	sFLASH_WriteDisnable();
+}
+
+
+
+
+/**
+  * @brief  用一个循环写入多个字节的数据
+  *         (Page WRITE sequence).
+  * @note   The number of byte can't exceed the FLASH page size.
+  * @param  pBuffer: 写入的字符串首地址
+  * @param  WriteAddr: 写入的页地址
+  * @param  NumByteToWrite: 字符串长度
+  * @retval None
+  */
+uint32_t sFLASH_WritePage(uint8_t* pBuffer, uint32_t WriteAddr, uint16_t NumByteToWrite)
+{
+    if(NumByteToWrite == 0) return WriteAddr;
+    
+    sFLASH_WriteEnable();
+    sFLASH_CS_LOW();
+    
+    sFLASH_SendByte(0x02);
+    sFLASH_SendByte((WriteAddr & 0xFF0000) >> 16);
+    sFLASH_SendByte((WriteAddr & 0xFF00) >> 8);
+    sFLASH_SendByte(WriteAddr & 0xFF);
+
+    while (NumByteToWrite--)
+    {
+        sFLASH_SendByte(*pBuffer);
+        pBuffer++;
+        WriteAddr++; 
+    }
+
+    sFLASH_CS_HIGH();
+    sFLASH_WaitForWriteEnd();
+    
+    return WriteAddr;
+}
+
+
+/**
+* @brief  根据起始地址和数据长度来读出对应位置的数据,并且打印出来
+  * @param  ReadAddr: FLASH's internal address to read from.
+  * @retval None
+  */
+void sFLASH_StartReadSequence(uint32_t ReadAddr, uint32_t Read_length)
+{
+    uint8_t byte;
+    printf("Reading from 0x%08X, length=%d\n", ReadAddr, Read_length);
+    
+    sFLASH_CS_LOW();
+    sFLASH_SendByte(0x03);
+    sFLASH_SendByte((ReadAddr & 0xFF0000) >> 16);
+    sFLASH_SendByte((ReadAddr & 0xFF00) >> 8);
+    sFLASH_SendByte(ReadAddr & 0xFF);
+
+    while (Read_length--)
+    {
+        byte = sFLASH_SendByte(0xFF);
+        if(byte >= 32 && byte <= 126) {  // 可打印字符
+            printf("%c", byte);
+        } else if(byte == '\r' || byte == '\n') {  // 换行符
+            printf("%c", byte);
+        } else {  // 其他字符用十六进制显示
+            printf("[%02X]", byte);
+        }
+    }
+    
+    sFLASH_CS_HIGH();
+}
+
+```
+
+
+
+main函数:
+
+```c
+/**
+  ******************************************************************************
+  * @file    main.c 
+  * @author  苏向标
+  * @version V1.0.0
+  * @date    2024/11/20
+  * @brief   程序主函数
+  ******************************************************************************
+  * 发光二极管具有单向导电性, 并且利用PF9/PF10来控制LED点亮
+  * None
+  ******************************************************************************
+  */
+
+/* Includes ----------------定义头文件---------------------------------------*/
+
+#include "stm32f4xx.h"
+#include "LED.h"
+#include "./KEY/key.h"
+#include "./BUZZER/buzzer.h"
+#include "Delay.h" 
+#include "./USART/uart.h"
+#include "./RTC/rtc.h"
+#include "./WIFI/wifi.h"
+#include "./FLASH/flash.h"
+#include "./DHT11/dht11.h"
+#include "./TIM/tim.h"
+#include "./SPI/W25Q128.h"
+
+
+//#include "./TIM/tim.h"
+#include <stdio.h>
+
+/** @addtogroup Template_Project
+  * @{
+  */ 
+
+/* Private typedef --------------------------定义类型----------------------------*/
+/* Private define ---------------------------定义声明----------------------------*/
+/* Private macro ----------------------------宏定义------------------------------*/
+#define DOMAIN "bemfa.com"
+#define PORT "8344"
+#define TOPIC "LED002,BEEP002"
+#define SSID "sxb"
+#define PASSWORD "123456789"
+#define UID "3f347ad0bdb04adf9c7f4a12a6df0687"
+/* Private variables ------------------------定义变量----------------------------*/
+/* Private function prototypes --------------函数声明----------------------------*/
+/* Private functions ------------------------定义函数----------------------------*/
+
+/**
+  * @brief  Main program
+  * @param  None
+  * @retval None
+  */
+
+ 
+struct __FILE { int handle; /* Add whatever you need here */ };
+FILE __stdout;
+FILE __stdin;
+
+//对fputc函数进行重定向，重定向UART1
+int fputc(int ch, FILE *f) 
+{
+	USART_SendData(USART1,ch); //把数据通过UART1转发出去
+	while( USART_GetFlagStatus(USART1,USART_FLAG_TXE) == RESET);  //为了等待该字节发送完成	
+	return ch;
+}
+void _sys_exit(int return_code) 
+{
+	
+}
+
+
+
+
+
+
+int main(void)
+{
+	uint8_t dhtbuf[5];
+	char current_time[128];
+	char time_DHT11[256];
+	
+	uint32_t uwStartSector = 0x000000;
+	uint32_t uwCurrentAddr = 0x000000; // 当前写入地址
+	uint32_t uwTotalBytes = 0;         // 已写入的总字节数
+	uint32_t writeLen = 0;
+	
+    // 系统初始化配置...
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
+    UART_Config(115200);
+	UART3_Config(115200);
+	ESP8266_SetupConnection(SSID, PASSWORD, DOMAIN, PORT, TOPIC);
+	// 初始化温湿度传感器
+	DHT11_Init();
+	// 初始化按钮
+	Key_ALL_Config();
+	// 初始化定时器
+	TIM14_Config();
+	// 初始化SPI_FLASH
+	W25Q128_Init();
+	// 清空块0的扇区1和扇区2(即清空64kb的内存出来)
+	sFLASH_EraseSector(0x000000);
+	sFLASH_EraseSector(0x001000);
+	
+	for(;;)
+	{
+		if(write_flag == 1)
+		{
+			if(uwCurrentAddr == uwStartSector) {
+				uwTotalBytes = 0;  // 如果是起始地址,重置长度
+			}
+			write_flag = 0;
+			// 获取温湿度
+			DHT11_GetValue(dhtbuf);
+
+			
+			// 获取时间
+			if(ESP8266_GetTime(UID) == true)
+			{
+				//printf("%s\r\n", uart3_buf);
+				uart3_buf[uart3_count] = '\0';
+				strcpy(current_time, (char *)uart3_buf);
+				//printf("%s\r\n", current_time);
+				
+				memset((char *)uart3_buf, 0, sizeof(uart3_buf));
+				uart3_count=0;
+				uart3_flag = 0;
+				gettime_flag=0;
+				//uart3_flag=0;
+				
+			}
+			else
+			{
+				printf("获取失败\r\n");
+			}
+			
+			// 封装字符串
+			writeLen = snprintf(time_DHT11, 255, "%s %d#%d\r\n", current_time, dhtbuf[2], dhtbuf[0]);
+			// printf("%s\r\n", time_DHT11);	
+			
+			// 检查是否需要擦除新的扇区
+			if((uwCurrentAddr & 0xFFF) + writeLen > 0xFFF) {
+				// 需要擦除下一个扇区
+				uint32_t nextSector = (uwCurrentAddr & 0xFFF000) + 0x1000;
+				sFLASH_EraseSector(nextSector);
+			}
+			
+			// 写入flash中
+			uwCurrentAddr = sFLASH_WritePage((uint8_t *)time_DHT11, uwCurrentAddr, writeLen);
+			uwTotalBytes += writeLen;
+			
+		}
+		
+		if (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_0) == 0)
+		{
+			delay_ms(10);
+			if (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_0) == 0)
+			{
+				// 从起始地址读取实际写入的数据量
+				printf("\n--- Reading Flash Content ---\n");
+				sFLASH_StartReadSequence(uwStartSector, uwTotalBytes);
+				printf("\n--- End of Flash Content ---\n");
+				while (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_0) == 0);
+			}
+		}
+
+		if (GPIO_ReadInputDataBit(GPIOE, GPIO_Pin_2) == 0) // 按键按下，PA0 为低电平
+		{
+			delay_ms(10);
+			if (GPIO_ReadInputDataBit(GPIOE, GPIO_Pin_2) == 0) // 再次确认按键仍然按下
+			{
+				// 清空块0的扇区1和扇区2(即清空64kb的内存出来)
+				sFLASH_EraseSector(0x000000);
+				sFLASH_EraseSector(0x001000);
+				uwCurrentAddr = uwStartSector;
+				uwTotalBytes = 0;
+				while (GPIO_ReadInputDataBit(GPIOE, GPIO_Pin_2) == 0); // 等待按键释放
+			}
+		}
+
+	}
+
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+### 时序模拟
+
+如果想要提高程序的实时性和程序的可移植性, 则可以选择使用MCU的某些IO口来生成SPI通信所需要的时序, 不再需要专门的SPI硬件
+
+
+
+用户只需要找到4个GPIO口, 作为SPI的SCK, SIMO, SOMI, CS模式,  SCK, MOSI, CS为输出, MISO为输入
+
+![image-20241212103350598](img/image-20241212103350598.png)
+
+将以上面的例子为例, 我们需要改写SendByte和初始化函数即可
+
+定义宏定义
+
+```c
+
+//拉低片选
+#define sFLASH_CS_LOW()       GPIO_ResetBits(GPIOB, GPIO_Pin_14)
+
+//拉高片选
+#define sFLASH_CS_HIGH()      GPIO_SetBits(GPIOB, GPIO_Pin_14)   
+
+
+//拉低SCK
+#define sFLASH_SCK_LOW()       GPIO_ResetBits(GPIOB, GPIO_Pin_3)
+
+//拉高SCK
+#define sFLASH_SCK_HIGH()      GPIO_SetBits(GPIOB, GPIO_Pin_3)   
+
+//拉低MOSI
+#define sFLASH_MOSI_LOW()       GPIO_ResetBits(GPIOB, GPIO_Pin_5)
+
+//拉高MOSI
+#define sFLASH_MOSI_HIGH()      GPIO_SetBits(GPIOB, GPIO_Pin_5)  
+
+
+//读取MISO
+#define sFLASH_MISO_READ()      GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_4)
+```
+
+初始化代码:
+
+```c
+/**
+  * @brief  初始化W25Q128
+  * @param  None
+  * @retval None
+  */
+void sFLASH_Init(void)
+{
+	//初始化GPIO
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	//打开GPIO的时钟
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB,ENABLE);
+
+	GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_OUT;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_DOWN;
+		
+	//SCK引脚输出模式
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3;
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	//MOSI引脚输出模式
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_5;
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	//CS引脚为推挽输出
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_14;
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	//MISO引脚输入模式
+	GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IN;
+	GPIO_InitStructure.GPIO_Pin =  GPIO_Pin_4;
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	//拉高片选，默认处于空闲状态
+	sFLASH_CS_HIGH();
+}
+```
+
+
+
+
+
+```c
+/**
+  * @brief  利用IO口发送字节，但是会同时收到一个字节
+  * @note   采用模式0：SCK引脚空闲为低电平，第1个边沿采样,并且数据格式MSB     
+  * @param  byte: byte to send.
+  * @retval The value of the received byte.
+  */
+uint8_t sFLASH_SendByte(uint8_t byte)
+{
+	uint8_t data = 0; //用于接收从器件的响应字节
+	uint8_t i = 0;
+	
+	//1.拉低SCK引脚
+	sFLASH_SCK_LOW();
+	delay_us(5);
+	
+	//2.循环发送8bit，并且MSB格式
+	for(i=0;i<8;i++)
+	{
+		//3.判断待发送的字节的最高位
+		if( byte & 0x80 )
+			sFLASH_MOSI_HIGH();
+		else
+			sFLASH_MOSI_LOW();
+		
+		byte <<= 1; //每次循环都左移1bit
+		delay_us(5);
+		
+		//4.拉高SCK引脚，此时第1个边沿出现
+		sFLASH_SCK_HIGH();
+		delay_us(5);
+		
+		data <<= 1;
+		data |= sFLASH_MISO_READ();
+		
+		//5.拉低SCK引脚，此时第2个边沿出现
+		sFLASH_SCK_LOW();
+		delay_us(5);
+	}
+	
+	return data;
+}
+```
+
+
+
+### RFID射频技术
+
+#### 原理
+
+![image-20241212111346171](img/image-20241212111346171.png)
+
+
+
+必须要记住: 
+
+1.   工作频率: 13.56MHz
+2.   每张卡唯一序列号为32位, 具有唯一性
+3.   每次发送的能量只够一张卡来接收, 多卡会导致每一张卡里面的电容都不满,最后都不会执行, 防碰撞一般是把能量提供给附近信号最强的那张卡
+
+
+
+![image-20241212112233753](img/image-20241212112233753.png)
+
+RFID使用的是SPI接口
+
+![image-20241212191142216](img/image-20241212191142216.png)
+
+同时RFID可以支持UART和$I^2C$通信
+
+
+
+
+
+#### 工作模式
+
+![image-20241212191535942](img/image-20241212191535942.png)
+
+
+
+通信过程中, RFID通常作为从器件, SCK时序核心必须由主器件控制, 双方通信采用MSB
+
+#### 硬件接线
+
+![image-20241212191624222](img/image-20241212191624222.png)
+
+代码移植:
+
+宏定义:
+
+```c
+//定义MFRC522的CS引脚操作
+#define MFRC522_CS(x)   (x) ? GPIO_SetBits(GPIOC,GPIO_Pin_9):GPIO_ResetBits(GPIOC,GPIO_Pin_9)
+#define MFRC522_Rst(x)  (x) ? GPIO_SetBits(GPIOB,GPIO_Pin_7):GPIO_ResetBits(GPIOB,GPIO_Pin_7)
+#define MFRC522_MOSI(x)(x) ?GPIO_SetBits(GPIOG,GPIO_Pin_15):GPIO_ResetBits(GPIOG,GPIO_Pin_15)
+#define MFRC522_SCK(x)  (x) ? GPIO_SetBits(GPIOC,GPIO_Pin_7):GPIO_ResetBits(GPIOC,GPIO_Pin_7)
+```
+
+SPI初始化:
+
+```c
+//SPI3初始化
+/*
+*			CS	 ---  PC9 （输出模式）
+*     		MOSI ---  PG15（输出模式）
+*			MISO ---  PA4 （输入模式）
+*			SCK  ---  PC7 （输出模式）
+*			RST  ---  PB7 （输出模式）
+*			VCC  ---  3.3V
+*			GND  ---  接地
+*
+*/
+void STM32_SPI3_Init(void) 
+{ 
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA|RCC_AHB1Periph_GPIOB|RCC_AHB1Periph_GPIOC|RCC_AHB1Periph_GPIOG,ENABLE);
+
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+
+	GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_OUT;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_DOWN;
+	
+	//SCK引脚输出模式
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_7;
+	GPIO_Init(GPIOC, &GPIO_InitStructure);
+
+	//MOSI引脚输出模式
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_15;
+	GPIO_Init(GPIOG, &GPIO_InitStructure);
+
+	//CS引脚为推挽输出
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9;
+	GPIO_Init(GPIOC, &GPIO_InitStructure);
+	
+	//RST引脚为推挽输出
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_7;
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	//MISO引脚输入模式
+	GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IN;
+	GPIO_InitStructure.GPIO_Pin =  GPIO_Pin_4;
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+	
+	//拉高片选，默认处于空闲状态
+	MFRC522_CS(1);
+}
+```
+
+
+
+
+
+发送和读取内容:
+
+模拟模式0
+
+![image-20241212194955972](img/image-20241212194955972.png)
+
+
+
+```c
+uint8_t SPI3_Send(u8 val)  
+{ 
+	uint8_t data = 0; //用于接收从器件的响应字节
+	uint8_t i = 0;
+	
+	//1.拉低SCK引脚
+	MFRC522_SCK(0);
+	delay_us(5);
+	
+	//2.循环发送8bit，并且MSB格式
+	for(i=0;i<8;i++)
+	{
+		//3.判断待发送的字节的最高位
+		if( val & 0x80 )
+			MFRC522_MOSI(1);
+		else
+			MFRC522_MOSI(0);
+		
+		val <<= 1; //每次循环都左移1bit
+		delay_us(5);
+		
+		//4.拉高SCK引脚，此时第1个边沿出现
+		MFRC522_SCK(1);
+		delay_us(5);
+		
+		data <<= 1;
+		data |= MFRC522_MISO();
+		
+		//5.拉低SCK引脚，此时第2个边沿出现
+		MFRC522_SCK(0);
+		delay_us(5);
+	}
+	
+	return data;
+}
+//功能描述从MFRC522的某一寄存器读一个字节数据
+//输入参数addr--寄存器地址
+//返 回 值返回读取到的一个字节数据 
+u8 Read_MFRC522(u8 addr) 
+{  
+	u8 val;
+	//地址格式1XXXXXX0   
+	MFRC522_CS(0);     
+	SPI3_Send(((addr<<1)&0x7E)|0x80);   
+	val=SPI3_Send(0xFF);    
+	MFRC522_CS(1); 
+	//   
+	return val;  
+}
+```
+
+
+
+
+
+## IIC
+
+
+
+### 简介
+
+全称: Inter Integrated Circuit, 内部集成电路。 是一种简单的, 半双工, 同步通信接口
+
+![image-20241212155435003](img/image-20241212155435003.png)
+
+全部IIC设备和MCU挂载在总线上, 设备之间想要通信,必须通过寻址机制, 因为I2C不同于SPI,  没有CS线,只能通过寻址方式来确实发送和接收设备
+
+
+
+ 总线上有两个默认上拉电阻, 上拉电阻的高电平电压由MCU提供(即SDA和SCL), 提供的GPIO引脚必须要配置为`开漏模式`, 写程序也可以写推挽
+
+
+
+![image-20241212160851757](img/image-20241212160851757.png)
+
+
+
+$I^2C$ 协议开始停止信号:
+
+1.   开始信号: 时钟线高电平期间拉低数据线
+2.   结束信号: 时钟线高电平期间拉高数据线
+
+
+
+数据发送的时候有一位表示方向, 这个位是地址的最低位, 这一点是通用的
+
+![image-20241212161350412](img/image-20241212161350412.png)
+
+![image-20241212161540935](img/image-20241212161540935.png)
+
+通信流程:
+
+![image-20241212163742087](img/image-20241212163742087.png)
+
+
+
+>   [!NOTE]
+>
+>   只允许在时钟高电平时候发送和接收数据, 从机是没办法主动断开通信的, 只能由主机在时钟线高电平期间,`拉高`数据线的电平, 这里的拉高必须是发生了电平的变化, 一直高电平是不行的
+
+
+
+### IIC通信代码实现
+
+#### 配置好引脚
+
+```c
+/**
+  * @brief  IIC的初始化
+  * @param  None
+  * @retval None
+  */
+void IIC_Config(void)
+{
+	GPIO_InitTypeDef GPIO_InitStructure;
+	//打开SDA和SCL引脚的时钟
+	RCC_AHB1PeriphClockCmd(IIC_SDA_CLK, ENABLE);
+	RCC_AHB1PeriphClockCmd(IIC_SCL_CLK, ENABLE);
+	
+	//配置SDA和SCL为输出模式
+	GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_OUT;			//输出功能
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_UP;
+	
+	GPIO_InitStructure.GPIO_Pin   = IIC_SDA_PIN;
+	GPIO_Init(IIC_SDA_PORT, &GPIO_InitStructure);
+	
+	GPIO_InitStructure.GPIO_Pin   = IIC_SCL_PIN;
+	GPIO_Init(IIC_SCL_PORT, &GPIO_InitStructure);
+	
+	//确保SDA和SCL默认处于高电平，表示空闲
+	IIC_SDA_SET(1);
+	IIC_SCL_SET(1);
+}
+/**
+  * @brief  设置IIC的SDA引脚模式
+  * @param  mode ：输出模式 GPIO_Mode_OUT  or  输入模式 GPIO_Mode_IN
+  * @retval None
+  * @note   None
+  */
+void IIC_SDAModeConfig(GPIOMode_TypeDef mode)
+{
+	GPIO_InitTypeDef GPIO_InitStructure;
+	
+	//打开GPIO时钟
+	RCC_AHB1PeriphClockCmd(IIC_SDA_CLK, ENABLE);
+	
+	//配置引脚 + 初始化
+	GPIO_InitStructure.GPIO_Mode  = mode;				//引脚模式
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_UP;
+	GPIO_InitStructure.GPIO_Pin   = IIC_SDA_PIN;
+	GPIO_Init(IIC_SDA_PORT, &GPIO_InitStructure);
+
+}
+```
+
+
+
+#### 开始信号
+
+```c
+/**
+  * @brief  IIC的开始信号
+  * @param  None
+  * @retval None
+  */
+void IIC_Start(void)
+{
+	//1.设置SDA引脚为输出模式
+	IIC_SDAModeConfig(GPIO_Mode_OUT);
+	
+	//2.确保SDA和SCL默认处于高电平，表示空闲
+	IIC_SDA_SET(1);
+	IIC_SCL_SET(1);
+	delay_us(5);
+	
+	//3.拉低SDA数据线
+	IIC_SDA_SET(0);
+	delay_us(5);
+	
+	//4.拉低SCL时钟线
+	IIC_SCL_SET(0);
+	delay_us(5);
+}
+```
+
+
+
+#### 发送字节
+
+```c
+/**
+  * @brief  IIC发送字节
+  * @param  data ：待发送的字节
+  * @retval None
+  * @note   遵循MSB格式
+  */
+void IIC_SendByte(uint8_t data)
+{
+	uint8_t i = 0;
+	
+	//1.设置SDA引脚为输出模式
+	IIC_SDAModeConfig(GPIO_Mode_OUT);
+	
+	//2.循环发送8bit 遵循MSB格式
+	for(i=0;i<8;i++)
+	{
+		//3.拉低SCL时钟线，此时主机准备数据
+		IIC_SCL_SET(0);
+		delay_us(5);
+		
+		//4.判断待发送的字节的最高位
+		if( data & 0x80 )
+			IIC_SDA_SET(1);
+		else
+			IIC_SDA_SET(0);
+		
+		data <<= 1; //每次循环必须左移
+		delay_us(5);
+		
+		//5.拉高SCL时钟线，此时从机读取数据
+		IIC_SCL_SET(1);
+		delay_us(5);		
+	}
+	
+	//6.拉低SCL时钟线，此时第8个时钟周期结束
+	IIC_SCL_SET(0);
+	delay_us(5);
+}
+```
+
+
+
+#### 判断应答
+
+```c
+/**
+  * @brief  IIC判断从机是否应答
+  * @param  data ：待发送的字节
+  * @retval None
+  * @note   遵循MSB格式
+  */
+bool IIC_IsACK(void)
+{
+	uint8_t ack = 0;
+	// 改成输入状态
+	IIC_SDAModeConfig(GPIO_Mode_IN);
+	// 读取应答,判断SDA是否为低电平, 是就表示接收到应答了
+
+	// 拉高SCL，准备读取应答信号
+	IIC_SCL_SET(0);
+	delay_us(5);
+
+	IIC_SCL_SET(1);
+	// 读取SDA线电平，低电平表示应答
+	ack = IIC_SDA_GET();
+
+	// 拉低SCL
+	IIC_SCL_SET(0);
+	delay_us(5);
+
+	// 返回是否应答（低电平表示应答）
+	return (ack == 0);
+}
+```
+
+
+
+#### 接收字节
+
+```c
+/**
+  * @brief  IIC接收字节
+  * @param  None
+  * @retval 返回接收到的字节
+  * @note   遵循MSB格式
+  */
+uint8_t IIC_ReadByte(void)
+{
+	uint8_t i = 0;
+	uint8_t receive = 0;
+
+	// 设置SDA为输入模式
+	IIC_SDAModeConfig(GPIO_Mode_IN);
+
+	// 接收8位数据，遵循MSB格式
+	for(i = 0; i < 8; i++)
+	{
+		// 拉低SCL，准备读取数据
+		IIC_SCL_SET(0);
+		delay_us(5);
+
+		// 拉高SCL，从机发送数据
+		IIC_SCL_SET(1);
+		delay_us(5);
+
+		// 左移并读取数据位
+		receive <<= 1;
+		if(IIC_SDA_GET())
+			receive |= 0x01;
+	}
+
+	// 最后拉低SCL
+	IIC_SCL_SET(0);
+	delay_us(5);
+
+	return receive;	
+
+}
+```
+
+
+
+#### 发送结束信号
+
+```c
+/**
+  * @brief  IIC的结束信号
+  * @param  None
+  * @retval None
+  */
+void IIC_End(void)
+{
+	//1.设置SDA引脚为输出模式
+	IIC_SDAModeConfig(GPIO_Mode_OUT);
+	
+	//2.确保SDA和SCL默认处于高电平，表示空闲
+	IIC_SDA_SET(0);
+	IIC_SCL_SET(0);
+	delay_us(5);
+	
+	// 先拉高时钟线
+	IIC_SCL_SET(1);
+	delay_us(5);
+	//3.拉高SDA数据线
+	IIC_SDA_SET(1);
+	delay_us(5);
+	
+	//4.拉低SCL时钟线
+	IIC_SCL_SET(0);
+	delay_us(5);
+}
+```
+
+
+
+### OLED
+
+
+
+
+
+
+
+
+
+
+
+
+
+## RTOS
+
+### 简介
+
+实时操作系统（Real Time Operating System）的简称就叫做RTOS，是指具有实时性、能支持实时控制系统工作的操作系统，RTOS的首要任务就是调度所有可以利用的资源来完成实时控制任务的工作，其次才是提高工作效率。
+
+ 
+
+绝大多数比较简单的产品（中小型产品）是直接在单片机上“裸奔”的，也就是产品不需要搭载RTOS的，但是产品的各个功能想要正常工作都需要主程序来进行调度。
+
+ 
+
+其实RTOS就是一段嵌入在程序中的代码，在系统上电复位后首先被执行，可以理解为用户的主程序，只不过用户把产品的其他功能（子程序）都建立在RTOS之上，在RTOS中可以调用API函数为每个子程序都创建一个任务（也可以叫做线程），用户只需要调用RTOS内核中的相关的API函数接口就可以控制子程序，而且可以为每个任务设置不同的优先级，通过RTOS的调度器进行调度，这样就可以合理的使用CPU。
+
+ 
+
+这里就涉及到产品的设计思路（裸机开发 or RTOS）以及程序的运行方式，可以分为三种：
+
+1.   轮询式
+2.   前后台
+3.   多任务
+
+
+
+而RTOS就是属于多任务,由于我们的处理器是单核的, 所以无法真正意义上实现并行, 只能通过让每个任务按顺序依次执行一个时间片来产生类似于并行的效果。
+
+
+
+### RTOS的种类 
+
+RTOS是实时操作系统的统称，不意味着是某一种确定的操作系统，而是指某一类操作系统，比如最常用的uC/OSII、uC/OSIII、FreeRTOS、RTX、RT-Thread、Huawei LiteOS........每种RTOS各有特色，所以大家可以根据实际需要选择对应的RTOS进行学习。
+
+ 
+
+#### uC/OS  
+
+
+
+uC/OS是Micrium公司推出的RTOS实时操作系统，分为两个版本： uC/OSII 和 uC/OSIII，该RTOS的特点是开源的、可裁剪的、具有可剥夺型内核，uC/OSII可以支持创建最多255个任务，而uC/OSIII对任务数量没有限制。
+
+ 
+
+uC/OS的发布时间是较早的，所以中文资料是最多的，并且代码例程比较丰富，但是想要在商业中进行使用，需要取得正版授权（花钱），所以大家可以把UCOS作为RTOS的入门。关于uC/OS的资料和源码都可以去官网下载  官网地址：[www.micrium.com](http://www.baidu.com/link?url=wk280bWsMgbEkDbjGpgZ6qarAxWWKgHh1wsVjTu8EXJsiPAEV24tFK5iZ9cBE5mG)
+
+![img](img/wps1.jpg) 
+
+![img](img/wps2.jpg) 
+
+ 
+
+#### FreeRTOS
+
+FreeRTOS也是RTOS的一种，在2003年发布，是免费的，虽然起步比UCOS晚，但是由于可以在商业中免费使用，所以目前的市场占有率是最高的，并且很多的半导体公司都和FreeRTOS有很紧密的合作关系，这些半导体公司的评估板绝大多数都是采用FreeRTOS进行程序设计。比如半导体公司发布的SDK（开发工具包）一般也采用FreeRTOS，另外，像蓝牙、WIFI等带协议栈的芯片或者模块也是采用FreeRTOS。
+
+ 
+
+相比于UCOS而言，FreeRTOS的文件数量更少，占用内存空间更少，所以在移植到不同硬件平台的时候更加轻松，FreeRTOS对于任务数量也是没有限制的，而是对于任务的优先级也没有限制。
+
+ 
+
+FreeRTOS支持抢占式、合作式、时间片调度等算法，而且FreeRTOS是完全免费的，这也是FreeRTOS的核心竞争力。
+
+ 
+
+FreeRTOS可以用在商业领域，不具有版权问题，如果在产品中使用FreeRTOS时没有修改原码，则产品不需要开源，如果使用FreeRTOS的过程修改了原码，则需要把修改的那部分代码进行开源，遵循MIT开源协议。
+
+ 
+
+大家可以去FreeRTOS的官网下载源码以及其他的资料，比如FreeRTOS提供了若干本书籍，比如关于RTOS的API函数的参考手册以及新手教程。 官网地址：[www.freertos.org](http://www.freertos.org)
+
+![img](img/wps3.jpg) 
+
+![img](img/wps4.jpg) 
+
+ 
+
+#### RT-Thread
+
+ 
+
+![img](img/wps5.jpg) 
+
+![img](img/wps6.jpg)
+
+
+
+### RTOS的源码下载
+
+想要真正掌握RTOS，则必须要去阅读RTOS的源码，才能理解RTOS是如何对任务进行调度
+
+可以去FreeRTOS的官网下载源码。
+
+ 
+
+FreeRTOS的发布者在2017年底加入了亚马逊公司，就是FreeRTOS已经被亚马逊公司收购了，所以V10.0.0版本之后的版本都是由亚马逊公司发布的，采用V9.0.0版本的原因是因为稳定。
+
+ 
+
+(1) 点击选项链接跳转GitHub托管网站，下载FreeRTOS以前的发行源码包， 比如 V9.0.0
+
+![img](img/wps7.jpg) 
+
+(2) 点击GitHub的标签tags，显示所有的FreeRTOS的源码发行版，搜索到V9.0.0版本即可
+
+![img](img/wps8.jpg) 
+
+![img](img/wps9.jpg) 
+
+ 
+
+注意：如果浏览器在登录GitHub网站时等待时间过长，或者无法登录界面，则可以使用其他的代码托管网站进行源码下载，比如Sourceforge代码托管网站 ，搜索FreeRTOS即可。
+
+ 
+
+![img](img/wps10.jpg) 
+
+![img](file:///C:\Users\ADMINI~1\AppData\Local\Temp\ksohtml17144\wps11.jpg) 
+
+![](file:///C:\Users\ADMINI~1\AppData\Local\Temp\ksohtml17144\wps12.jpg)
+
+
+
+
+
+### RTOS源码结构
+
+解压好的源码包内部有一个叫做FreeRTOS的文件夹，该文件夹内部包含FreeRTOS的源码以及许可和通用的头文件，并且还提供丰富的案例供用户在不同的硬件平台使用。
+
+![image-20241213195816533](img/image-20241213195816533.png)
+
+Demo中提供了很多个半导体公司的评估板的代码例程，用户可以参考甚至直接使用。而License文件夹中包含了FreeRTOS的许可文件，大家可以在商业软件中进行参考，在Source文件夹中包含通用的头文件以及针对不同硬件平台的移植文件供用户使用。
+
+
+
+### FreeRTOS的移植
+
+如果想要在项目中利用RTOS对任务进行调度，则需要把RTOS的源码移植到自己的项目中，移植的步骤如下：
+
+ 
+
+(1) 去FreeRTOS的官网下载源码包，源码包的版本可以是V9.0.0或更新的版本 （比较稳定）
+
+![img](img/wps13.jpg) 
+
+(2) 把源码包解压到本地，分析源码包中哪些文件需要移植，可以浏览源码包的readme.txt
+
+获取源文件
+
+![image-20241213200153516](img/image-20241213200153516.png)
+
+获取port和heap文件
+
+![image-20241213200400517](img/image-20241213200400517.png)
+
+![image-20241213200416381](img/image-20241213200416381.png)
+
+
+
+获取头文件
+
+![image-20241213200442203](img/image-20241213200442203.png)
+
+![image-20241213200515641](img/image-20241213200515641.png)
+
+获取配置文件
+
+![image-20241213200539798](img/image-20241213200539798.png)
+
+
+
+(1) 把FreeRTOS源码包中需要移植的文件拷贝到自己工程中对应的文件夹，操作如下所示：
+
+![img](img/wps15.jpg) 
+
+(2) 打开自己的工程，把拷贝过来文件添加到KEIL5工程中，编辑文件夹的结构，如下所示
+
+![img](img/wps16.jpg) 
+
+ 
+
+(3) 配置KEIL5工程的头文件的路径，确保编译器可以找到关于FreeRTOS的头文件，如下：
+
+![img](img/wps17.jpg) 
+
+(4) 编译工程，如果编译之后报错，根据错误原因解决错误，直到编译通过为止，如下所示
+
+ 
+
+![img](img/wps18.jpg) 
+
+![img](img/wps19.jpg) 
+
+提示：__ICCARM__宏定义是和开发工具相关的，该宏定义是IAR软件需要使用的，而目前采用的开发工具是KEIL，KEIL软件需要使用其他的宏定义。
+
+ 
+
+再次编译，发现有函数出现重复定义的情况，port.c和stm32f4xx_it.c中出现，所以可以选择分别进行分析，可以把stm32f4xx_it.c中的函数名称删除即可。
+
+![img](img/wps20.jpg) 
+
+ 
+
+再次编译，发现有5个函数未定义，命名规则是有规律的，都是HooK结尾，Hook是钩子函数，其实属于回调函数的一种，目前由于不知道是否需要使用，可以选择不去定制。
+
+![img](img/wps21.jpg) 
+
+ 
+
+由于FreeRTOS是高度可定制的，定制的功能是由FreeRTOSConfig.h决定，所以需要配置该头文件，裁剪掉这几个功能即可。
+
+![img](img/wps22.jpg)
+
+再次编译，发现没有出现任何错误和任何警告，则说明FreeRTOS实时操作系统移植成功！！
+
+ 
+
+
+
+
+
+### 任务管理
+
+任务的概念
+
+FreeRTOS是一个支持多任务的实时操作系统，如之前裸机开发时采用的轮询系统而言，主程序是一个死循环，CPU按照死循环中的流程执行代码，而在多任务系统中，用户可以把整个系统分割为多个独立的且不能返回（死循环）的函数，这些函数就被称为任务。
+
+ 
+
+应用程序中的任务都是由FreeRTOS的调度器进行调度，同时每个任务具有独立的栈空间，栈空间其实就是单片机中RAM的一段空间，通常可以提前定义一个全局数组，或者在创建任务的时候对任务的栈空间进行动态的分配，可以参考FreeRTOS的官方资料。
+
+ 
+
+![img](img/wps23.jpg) 
+
+ 
+
+任务的状态
+
+ 
+
+对于FreeRTOS中的任务而言，FreeRTOS的调度器会根据任务的状态决定运行哪个任务，任务的状态一共有四种：运行态、就绪态、挂起态、阻塞态。 可以参考FreeRTOS的官网资料。
+
+
+
+![img](img/wps24.jpg)  
+
+ 
+
+l 任务优先级
+
+ 
+
+FreeRTOS可以为每一个创建的任务分配一个优先级，当然也可以让多个任务共用一个优先级，这里就涉及到调度器的调度算法，有抢占式、时间片一共2种算法。
+
+![img](img/wps25.jpg) 
+
+ 
+
+l 任务的创建
+
+ 
+
+刚才提到过任务都是独立的，并且每个任务都需要占用一部分RAM空间，单片机中的RAM是有限的，所以FreeRTOS就提供了两种方案为每个任务分配栈空间：静态分配 + 动态分配，而且FreeRTOS提供了不同的函数接口给用户去申请任务的空间。两种分配方案的区别如下：
+
+ 
+
+一般情况下采用动态分配的方案，所以需要调用API函数，名字叫做[xTaskCreate()](https://www.freertos.org/a00125.html)，如下图
+![img](img/wps26.jpg)
+
+![img](img/wps27.jpg) 
+
+![img](img/wps28.jpg) 
+
+![img](img/wps29.jpg) 
+
+l 启动调度器
+
+![img](img/wps30.jpg) 
+
+ 
+
+l 任务的删除
+
+ 
+
+FreeRTOS中的任务是可以删除的，如果用户创建的任务只打算运行一次就可以删掉，调用函数接口 vTaskDelete() ，调用该函数就可以把动态创建或者静态创建的任务从任务表中删掉。
+
+![img](img/wps31.jpg) 
+
+![img](img/wps32.jpg) 
+
+ 
+
+ 
+
+l 任务的挂起
+
+ 
+
+在某些情况下，某些任务可能只运行一段时间，然后让任务暂停运行，过一段时间继续运行，如果采用反复删除和反复创建的方案，就会导致任务之前的数据丢失，FreeRTOS提供一个函数可以把任务挂起，该函数为vTaskSuspend() 。
+
+![img](img/wps33.jpg) 
+
+一旦任务被挂起，则不管任务的优先级是否为最高，都不会获得CPU资源，也就是说处于挂起态的任务永远不能进入运行态，除非该任务被恢复，如果想要恢复一个任务，则需要调用vTaskResume()。
+
+![img](img/wps34.jpg) 
+
+ 
+
+ 
+
+l 任务的恢复
+
+ 
+
+FreeRTOS提供了一个恢复函数，可以让处于挂起态的任务恢复，注意只有被挂起的任务才可以被恢复。
+
+![img](img/wps35.jpg) 
+
+![img](img/wps36.jpg) 
+
+  
+
